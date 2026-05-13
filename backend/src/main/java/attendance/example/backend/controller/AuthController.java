@@ -1,6 +1,8 @@
 package attendance.example.backend.controller;
 
 import attendance.example.backend.dto.AuthResponse;
+import attendance.example.backend.dto.CheckEmailRequest;
+import attendance.example.backend.dto.ForgotPasswordResetRequest;
 import attendance.example.backend.dto.LoginRequest;
 import attendance.example.backend.dto.PasswordChangeRequest;
 import attendance.example.backend.dto.SignupRequest;
@@ -47,6 +49,18 @@ public class AuthController {
             HttpServletRequest httpRequest
     ) throws Exception {
         authService.changePassword(httpRequest, request);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/check-email")
+    public ResponseEntity<?> checkEmail(@RequestBody CheckEmailRequest request) throws Exception {
+        boolean exists = authService.checkEmailExists(request);
+        return ResponseEntity.ok(java.util.Map.of("exists", exists));
+    }
+
+    @PostMapping("/forgot-password-reset")
+    public ResponseEntity<Void> forgotPasswordReset(@RequestBody ForgotPasswordResetRequest request) throws Exception {
+        authService.forgotPasswordReset(request);
         return ResponseEntity.noContent().build();
     }
 

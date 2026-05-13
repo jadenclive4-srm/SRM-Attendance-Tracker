@@ -8,7 +8,9 @@ C:\Users\Sunil\Downloads\SRM-Attendance-Tracker\backend\src\main\java\attendance
 C:\Users\Sunil\Downloads\SRM-Attendance-Tracker\backend\src\main\java\attendance\example\backend\controller\HomeController.java
 C:\Users\Sunil\Downloads\SRM-Attendance-Tracker\backend\src\main\java\attendance\example\backend\controller\NotificationController.java
 C:\Users\Sunil\Downloads\SRM-Attendance-Tracker\backend\src\main\java\attendance\example\backend\dto\AuthResponse.java
+C:\Users\Sunil\Downloads\SRM-Attendance-Tracker\backend\src\main\java\attendance\example\backend\dto\CheckEmailRequest.java
 C:\Users\Sunil\Downloads\SRM-Attendance-Tracker\backend\src\main\java\attendance\example\backend\dto\ErrorResponse.java
+C:\Users\Sunil\Downloads\SRM-Attendance-Tracker\backend\src\main\java\attendance\example\backend\dto\ForgotPasswordResetRequest.java
 C:\Users\Sunil\Downloads\SRM-Attendance-Tracker\backend\src\main\java\attendance\example\backend\dto\LoginRequest.java
 C:\Users\Sunil\Downloads\SRM-Attendance-Tracker\backend\src\main\java\attendance\example\backend\dto\MonthlyDetailsResponse.java
 C:\Users\Sunil\Downloads\SRM-Attendance-Tracker\backend\src\main\java\attendance\example\backend\dto\PasswordChangeRequest.java

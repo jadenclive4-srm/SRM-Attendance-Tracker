@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth";
 import { loginUser } from "@/lib/api";
 import { toast } from "sonner";
+import ForgotPasswordDialog from "@/components/ForgotPasswordDialog";
 
 export default function Login() {
   const nav = useNavigate();
@@ -15,6 +16,7 @@ export default function Login() {
   const [pwd, setPwd] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [forgotDialogOpen, setForgotDialogOpen] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -267,11 +269,7 @@ export default function Login() {
                     <button
                       type="button"
                       className="text-xs text-slate-300 hover:text-slate-100 transition-colors"
-                      onClick={() =>
-                        toast(
-                          "Please contact your IT administrator for password recovery."
-                        )
-                      }
+                      onClick={() => setForgotDialogOpen(true)}
                     >
                       Forgot password?
                     </button>
@@ -396,11 +394,7 @@ export default function Login() {
                       <button
                         type="button"
                         className="text-xs font-semibold text-[#00A99D] hover:text-[#008b82] transition-colors"
-                        onClick={() =>
-                          toast(
-                            "Please contact your IT administrator for password recovery."
-                          )
-                        }
+                        onClick={() => setForgotDialogOpen(true)}
                       >
                         Forgot password?
                       </button>
@@ -481,6 +475,12 @@ export default function Login() {
           </div>
         </div>
       </div>
+
+      {/* Forgot Password Dialog */}
+      <ForgotPasswordDialog
+        open={forgotDialogOpen}
+        onOpenChange={setForgotDialogOpen}
+      />
     </div>
   );
 }

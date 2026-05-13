@@ -1,6 +1,8 @@
 package attendance.example.backend.service;
 
 import attendance.example.backend.dto.AuthResponse;
+import attendance.example.backend.dto.CheckEmailRequest;
+import attendance.example.backend.dto.ForgotPasswordResetRequest;
 import attendance.example.backend.dto.LoginRequest;
 import attendance.example.backend.dto.PasswordChangeRequest;
 import attendance.example.backend.dto.SignupRequest;
@@ -134,6 +136,43 @@ public class AuthService {
         cookie.setMaxAge(0);
 
         response.addCookie(cookie);
+    }
+
+    public boolean checkEmailExists(CheckEmailRequest request) throws Exception {
+        if (request == null || request.getEmail() == null || request.getEmail().isBlank()) {
+            return false;
+        }
+        String email = employeeService.normalizeEmail(request.getEmail());
+        return employeeService.findByEmail(email).isPresent();
+    }
+
+    public void forgotPasswordReset(ForgotPasswordResetRequest request) throws Exception {
+        if (request == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Request payload is required");
+        }
+        String email = requireText(request.getEmail(), "Email is required");
+        String newPassword = requirePassword(request.getNewPassword());
+
+        String normalizedEmail = employeeService.normalizeEmail(email);
+        Employee employee = employeeService.findByEmail(normalizedEmail)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Employee not found with this email"));
+
+        if (employee.getStatus() != null && employee.getStatus().equalsIgnoreCase("inactive")) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "Account has been removed or deactivated");
+        }
+
+        FirebaseAuth.getInstance().updateUser(
+                new UserRecord.UpdateRequest(employee.getId()).setPassword(newPassword)
+        );
+
+        notificationService.createNotification(
+                employee.getId(),
+                "success",
+                "Password reset successfully",
+                "Your password has been reset via forgot password option.",
+                null,
+                null
+        );
     }
 
     public void changePassword(HttpServletRequest request, PasswordChangeRequest payload) throws Exception {

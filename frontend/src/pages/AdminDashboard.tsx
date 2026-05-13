@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { AttendanceRecord, AttendanceStatus, Employee, STATUS_COLOR } from "@/lib/types";
-import { countByStatus, dateKey } from "@/lib/attendance";
+import { countByStatus } from "@/lib/attendance";
 import { getAttendanceForEmployees, getEmployees } from "@/lib/api";
 import StatCard from "@/components/StatCard";
-import { Users, CheckCircle2, AlertCircle, Trophy, FileText, BarChart3 } from "lucide-react";
+import { Users, CheckCircle2, AlertCircle, Trophy, FileText, BarChart3, CalendarX2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { eachDayOfInterval, format } from "date-fns";
 import DateRangePicker, { RangeContext } from "@/components/DateRangePicker";
-import { defaultRange, filterRecords, rangeToday } from "@/lib/dateRange";
+import { defaultRange, filterRecords } from "@/lib/dateRange";
 import StackedTrendChart from "@/components/StackedTrendChart";
 import FullReportAnalyticsDialog from "@/components/FullReportAnalyticsDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -111,6 +111,42 @@ export default function AdminDashboard() {
   const avgOver3PerWeek = ranked.filter(r => (r.counts.WFO + r.counts.CLT) >= 12);
   const below4PerMonth = ranked.filter(r => (r.counts.WFO + r.counts.CLT) < 4);
   const fullyWFH = ranked.filter(r => r.counts.WFH > 0 && r.counts.WFO === 0 && r.counts.CLT === 0);
+
+  // ── Yet to Mark Attendance (working days in range with no record) ──
+  const [yetToMarkDialogOpen, setYetToMarkDialogOpen] = useState(false);
+
+  const yetToMarkAttendance = useMemo(() => {
+    // Get all working days in the range (up to today)
+    const effectiveTo = range.to > today ? today : range.to;
+    if (effectiveTo < range.from) return [];
+
+    const workingDays = eachDayOfInterval({ start: range.from, end: effectiveTo })
+      .filter((d) => {
+        const dow = d.getDay();
+        return dow !== 0 && dow !== 6;
+      })
+      .map((d) => format(d, "yyyy-MM-dd"));
+
+    // For each employee, find which working days they have no record for
+    const result: Array<{ emp: Employee; missedDates: string[] }> = [];
+
+    employees.forEach((emp) => {
+      const empRecords = attendance[emp.id] || [];
+      const recordDates = new Set(empRecords.map((r) => r.date));
+      const missedDates = workingDays.filter((wd) => !recordDates.has(wd));
+      if (missedDates.length > 0) {
+        result.push({ emp, missedDates });
+      }
+    });
+
+    // Sort: most missed days first, then alphabetically
+    result.sort((a, b) => {
+      if (b.missedDates.length !== a.missedDates.length) return b.missedDates.length - a.missedDates.length;
+      return a.emp.fullName.localeCompare(b.emp.fullName);
+    });
+
+    return result;
+  }, [attendance, employees, range, today]);
 
   useEffect(() => {
     getEmployees()
@@ -268,6 +304,12 @@ export default function AdminDashboard() {
             <InsightCard title="Fully Remote" subtitle="No office or client visits"
               items={fullyWFH.slice(0, 5).map(r => ({ emp: r.emp, value: `${r.counts.WFH} WFH` }))}
               empty="No fully remote employees" />
+            <div className="cursor-pointer" onClick={() => setYetToMarkDialogOpen(true)}>
+              <YetToMarkInsightCard
+                yetToMarkData={yetToMarkAttendance}
+                rangeLabel={rangeLabel}
+              />
+            </div>
           </div>
         </div>
       </Card>
@@ -349,6 +391,49 @@ export default function AdminDashboard() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Yet to Mark Attendance Dialog */}
+      <Dialog open={yetToMarkDialogOpen} onOpenChange={setYetToMarkDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Yet to Mark Attendance</DialogTitle>
+            <DialogDescription>
+              Employees who missed marking attendance on working days in {rangeLabel}
+            </DialogDescription>
+          </DialogHeader>
+          {yetToMarkAttendance.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-8 text-center">All employees marked on all days 🎉</p>
+          ) : (
+            <div className="space-y-4">
+              {yetToMarkAttendance.map(({ emp, missedDates }) => (
+                <div key={emp.id} className="rounded-lg border border-border p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-9 w-9 rounded-full grid place-items-center text-[11px] font-bold text-white"
+                        style={{ background: emp.avatarColor }}>
+                        {emp.fullName.split(" ").map(n=>n[0]).slice(0,2).join("")}
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium">{emp.fullName}</div>
+                        <div className="text-[11px] text-muted-foreground">{emp.employeeId} • {emp.designation}</div>
+                      </div>
+                    </div>
+                    <span className="text-sm font-bold text-destructive">{missedDates.length} missed</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {missedDates.map((date) => (
+                      <span key={date} className="inline-flex items-center px-2 py-1 rounded-md text-[11px] font-medium bg-destructive/10 text-destructive border border-destructive/20">
+                        <CalendarX2 className="h-3 w-3 mr-1" />
+                        {format(new Date(date + "T00:00:00"), "dd MMM")}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -385,6 +470,62 @@ function InsightCard({
             </li>
           ))}
         </ul>
+      )}
+    </Card>
+  );
+}
+
+function YetToMarkInsightCard({
+  yetToMarkData,
+  rangeLabel,
+}: {
+  yetToMarkData: Array<{ emp: Employee; missedDates: string[] }>;
+  rangeLabel: string;
+}) {
+  const totalMissedDays = yetToMarkData.reduce((sum, item) => sum + item.missedDates.length, 0);
+  const top5 = yetToMarkData.slice(0, 5);
+
+  return (
+    <Card className="card-soft p-6 hover:bg-muted/20 transition-colors h-full">
+      <div className="mb-4">
+        <div className="flex items-center gap-2">
+          <CalendarX2 className="h-4 w-4 text-destructive" />
+          <h3 className="font-bold">Yet to Mark Attendance</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">{rangeLabel}</p>
+      </div>
+      <div className="mb-3">
+        <span className="text-2xl font-bold text-destructive">{yetToMarkData.length}</span>
+        <span className="text-sm text-muted-foreground ml-1">employees</span>
+        <span className="text-xs text-muted-foreground block">
+          {totalMissedDays} total missed day{totalMissedDays !== 1 ? "s" : ""}
+        </span>
+      </div>
+      {top5.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-6 text-center">All employees marked on all days 🎉</p>
+      ) : (
+        <ul className="space-y-2.5">
+          {top5.map(({ emp, missedDates }) => (
+            <li key={emp.id} className="flex items-center justify-between rounded-lg p-2 hover:bg-muted/50 transition-colors">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="h-8 w-8 rounded-full grid place-items-center text-[11px] font-bold text-white shrink-0"
+                  style={{ background: emp.avatarColor }}>
+                  {emp.fullName.split(" ").map((n: string) => n[0]).slice(0, 2).join("")}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium truncate">{emp.fullName}</div>
+                  <div className="text-[11px] text-muted-foreground">{emp.designation}</div>
+                </div>
+              </div>
+              <span className="text-sm font-semibold text-destructive shrink-0 ml-2">{missedDates.length}d</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {yetToMarkData.length > 5 && (
+        <p className="text-xs text-muted-foreground text-center mt-3">
+          +{yetToMarkData.length - 5} more employee{yetToMarkData.length - 5 !== 1 ? "s" : ""}
+        </p>
       )}
     </Card>
   );

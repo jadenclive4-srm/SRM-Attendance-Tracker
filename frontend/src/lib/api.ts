@@ -62,6 +62,23 @@ export async function changePassword(currentPassword: string, newPassword: strin
   });
 }
 
+export async function checkEmailExists(email: string): Promise<boolean> {
+  const result = await request<{ exists: boolean }>(`/api/auth/check-email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  return result.exists;
+}
+
+export async function forgotPasswordReset(email: string, newPassword: string): Promise<void> {
+  return request<void>(`/api/auth/forgot-password-reset`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, newPassword }),
+  });
+}
+
 export async function getEmployees(): Promise<Employee[]> {
   return request<Employee[]>("/api/employees");
 }
