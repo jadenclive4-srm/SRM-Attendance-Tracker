@@ -1,0 +1,58 @@
+package attendance.example.backend.controller;
+
+import attendance.example.backend.exception.ApiException;
+import attendance.example.backend.model.DeletionRequest;
+import attendance.example.backend.model.Employee;
+import org.springframework.http.HttpStatus;
+import attendance.example.backend.service.EmployeeService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/employees")
+public class EmployeeController {
+
+    private final EmployeeService employeeService;
+
+    public EmployeeController(EmployeeService employeeService) {
+        this.employeeService = employeeService;
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Employee>> getEmployees() throws Exception {
+        return ResponseEntity.ok(employeeService.getEmployees());
+    }
+
+    @GetMapping("/{employeeId}/deletion-request")
+    public ResponseEntity<DeletionRequest> getDeletionRequest(@PathVariable String employeeId) throws Exception {
+        return ResponseEntity.ok(employeeService.findDeletionRequestByEmployeeId(employeeId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Deletion request not found")));
+    }
+
+    @PostMapping("/{employeeId}/deletion-request")
+    public ResponseEntity<DeletionRequest> createDeletionRequest(@PathVariable String employeeId) throws Exception {
+        return ResponseEntity.ok(employeeService.createDeletionRequest(employeeId));
+    }
+
+    @GetMapping("/deletion-requests")
+    public ResponseEntity<List<DeletionRequest>> getPendingDeletionRequests() throws Exception {
+        return ResponseEntity.ok(employeeService.getPendingDeletionRequests());
+    }
+
+    @PostMapping("/deletion-requests/{employeeId}/approve")
+    public ResponseEntity<DeletionRequest> approveDeletionRequest(@PathVariable String employeeId) throws Exception {
+        return ResponseEntity.ok(employeeService.approveDeletionRequest(employeeId, "admin"));
+    }
+
+    @PostMapping("/deletion-requests/{employeeId}/dismiss")
+    public ResponseEntity<Void> dismissDeletionRequest(@PathVariable String employeeId) throws Exception {
+        employeeService.dismissDeletionRequest(employeeId);
+        return ResponseEntity.noContent().build();
+    }
+}
