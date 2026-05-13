@@ -5,16 +5,24 @@ import com.google.cloud.firestore.Firestore;
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.FirebaseOptions;
 import com.google.firebase.cloud.FirestoreClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 @Configuration
 public class FirebaseConfig {
+
+    private static final Logger logger = LoggerFactory.getLogger(FirebaseConfig.class);
+
+    private static final String ENV_VAR_NAME = "FIREBASE_SERVICE_ACCOUNT_JSON";
 
     private final Resource serviceAccountResource;
 
@@ -24,7 +32,7 @@ public class FirebaseConfig {
 
     @Bean
     public Firestore firestore() throws IOException {
-        InputStream stream = serviceAccountResource.getInputStream();
+        InputStream stream = getServiceAccountStream();
 
         FirebaseOptions options = FirebaseOptions.builder()
                 .setCredentials(GoogleCredentials.fromStream(stream))
@@ -35,5 +43,22 @@ public class FirebaseConfig {
         }
 
         return FirestoreClient.getFirestore();
+    }
+
+    /**
+     * Reads the Firebase service account JSON from either:
+     * 1. The FIREBASE_SERVICE_ACCOUNT_JSON environment variable (preferred for production/Render)
+     * 2. The classpath resource file (fallback for local development)
+     */
+    private InputStream getServiceAccountStream() throws IOException {
+        String envJson = System.getenv(ENV_VAR_NAME);
+        if (envJson != null && !envJson.isBlank()) {
+            logger.info("Loading Firebase credentials from environment variable: {}", ENV_VAR_NAME);
+            return new ByteArrayInputStream(envJson.getBytes(StandardCharsets.UTF_8));
+        }
+
+        logger.info("Environment variable {} not set. Falling back to classpath resource: {}",
+                ENV_VAR_NAME, serviceAccountResource.getDescription());
+        return serviceAccountResource.getInputStream();
     }
 }

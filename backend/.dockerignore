@@ -37,7 +37,8 @@ Dockerfile
 *.log
 
 # Firebase service account key — NEVER include in Docker image!
-# Pass this via Render's Secret Files or volume mount at runtime
+# For production (Render): Set FIREBASE_SERVICE_ACCOUNT_JSON env variable with the full JSON content
+# For local dev: The file is included from src/main/resources/firebase/ via classpath
 firebase/serviceAccountKey.json
 
 # Environment files
