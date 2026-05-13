@@ -1,9 +1,9 @@
-import { Employee, AttendanceRecord, AttendanceStatus } from "./types";
-import { countByStatus } from "./attendance";
-import { DateRange, filterRecords } from "./dateRange";
+import { eachDayOfInterval, format } from "date-fns";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import { format } from "date-fns";
+import { countByStatus } from "./attendance";
+import { DateRange, filterRecords } from "./dateRange";
+import { AttendanceRecord, AttendanceStatus, Employee } from "./types";
 
 export interface AnalyticsExportData {
   leaderboard: LeaderboardRow[];
@@ -24,7 +24,9 @@ export interface LeaderboardRow {
   wfh: number;
   pto: number;
   hol: number;
-  totalOffice: number;
+  totalWorkingDays: number;
+  officePct: number;
+  meetsThreePerWeek: boolean;
 }
 
 export interface Top5Row {
@@ -60,24 +62,31 @@ export interface FullyRemoteRow {
   wfh: number;
 }
 
+interface AnalyticsSection {
+  title: string;
+  headers: string[];
+  rows: (string | number)[][];
+}
+
 /**
- * Build analytics report data reusing dashboard aggregation logic
+ * Build analytics report data reusing dashboard aggregation logic.
  */
 export function buildAnalyticsReport(
   employees: Employee[],
   attendance: Record<string, AttendanceRecord[]>,
   range: DateRange
 ): AnalyticsExportData {
-  // Step 1: Calculate counts for all employees
   type RankRow = {
     emp: Employee;
     counts: Record<AttendanceStatus, number>;
   };
 
+  const today = new Date();
+
   const ranked: RankRow[] = employees
-    .map((e) => {
-      const recs = filterRecords(attendance[e.id] || [], range);
-      return { emp: e, counts: countByStatus(recs) };
+    .map((employee) => {
+      const recs = filterRecords(attendance[employee.id] || [], range);
+      return { emp: employee, counts: countByStatus(recs) };
     })
     .sort((a, b) => {
       if (b.counts.WFO !== a.counts.WFO) return b.counts.WFO - a.counts.WFO;
@@ -86,118 +95,98 @@ export function buildAnalyticsReport(
       return a.counts.PTO - b.counts.PTO;
     });
 
-  // Step 2: Build Leaderboard (all employees, ranked)
-  const leaderboard: LeaderboardRow[] = ranked.map((r, idx) => ({
-    rank: idx + 1,
-    employeeId: r.emp.employeeId,
-    name: r.emp.fullName,
-    designation: r.emp.designation,
-    team: r.emp.team,
-    wfo: r.counts.WFO,
-    clt: r.counts.CLT,
-    wfh: r.counts.WFH,
-    pto: r.counts.PTO,
-    hol: r.counts.HOL,
-    totalOffice: r.counts.WFO + r.counts.CLT,
-  }));
+  // Calculate total working days in range
+  const effectiveTo = range.to > today ? today : range.to;
+  const totalWorkingDaysInRange = effectiveTo >= range.from
+    ? eachDayOfInterval({ start: range.from, end: effectiveTo }).filter((d) => {
+        const dow = d.getDay();
+        return dow !== 0 && dow !== 6;
+      }).length
+    : 0;
 
-  // Step 3: Top 5 by Office Presence (WFO + CLT)
+  const weeksInRange = totalWorkingDaysInRange > 0 ? totalWorkingDaysInRange / 5 : 0;
+
+  const leaderboard: LeaderboardRow[] = ranked.map((row, index) => {
+    const empTotalDays = row.counts.WFO + row.counts.WFH + row.counts.CLT + row.counts.PTO;
+    const officeDays = row.counts.WFO + row.counts.CLT;
+    const officePct = empTotalDays > 0 ? Math.round((officeDays / empTotalDays) * 100) : 0;
+    const avgOfficePerWeek = weeksInRange > 0 ? officeDays / weeksInRange : 0;
+    const meetsThreePerWeek = avgOfficePerWeek >= 3;
+
+    return {
+      rank: index + 1,
+      employeeId: row.emp.employeeId,
+      name: row.emp.fullName,
+      designation: row.emp.designation,
+      team: row.emp.team,
+      wfo: row.counts.WFO,
+      clt: row.counts.CLT,
+      wfh: row.counts.WFH,
+      pto: row.counts.PTO,
+      hol: row.counts.HOL,
+      totalWorkingDays: empTotalDays,
+      officePct,
+      meetsThreePerWeek,
+    };
+  });
+
   const top5: Top5Row[] = [...ranked]
-    .sort((a, b) => (b.counts.WFO + b.counts.CLT) - (a.counts.WFO + a.counts.CLT))
+    .sort((a, b) => b.counts.WFO + b.counts.CLT - (a.counts.WFO + a.counts.CLT))
     .slice(0, 5)
-    .map((r, idx) => ({
-      rank: idx + 1,
-      employeeId: r.emp.employeeId,
-      name: r.emp.fullName,
-      designation: r.emp.designation,
-      team: r.emp.team,
-      totalOffice: r.counts.WFO + r.counts.CLT,
+    .map((row, index) => ({
+      rank: index + 1,
+      employeeId: row.emp.employeeId,
+      name: row.emp.fullName,
+      designation: row.emp.designation,
+      team: row.emp.team,
+      totalOffice: row.counts.WFO + row.counts.CLT,
     }));
 
-  // Step 4: Consistent In Office (>= 12 days threshold)
   const consistentInOffice: ConsistentRow[] = ranked
-    .filter((r) => r.counts.WFO + r.counts.CLT >= 12)
-    .map((r) => ({
-      employeeId: r.emp.employeeId,
-      name: r.emp.fullName,
-      designation: r.emp.designation,
-      team: r.emp.team,
-      totalOffice: r.counts.WFO + r.counts.CLT,
+    .filter((row) => row.counts.WFO + row.counts.CLT >= 12)
+    .map((row) => ({
+      employeeId: row.emp.employeeId,
+      name: row.emp.fullName,
+      designation: row.emp.designation,
+      team: row.emp.team,
+      totalOffice: row.counts.WFO + row.counts.CLT,
     }));
 
-  // Step 5: Less Than 4 Office Days
-  const lessThan4: LessThan4Row[] = ranked
-    .filter((r) => r.counts.WFO + r.counts.CLT < 4)
-    .map((r) => ({
-      employeeId: r.emp.employeeId,
-      name: r.emp.fullName,
-      designation: r.emp.designation,
-      team: r.emp.team,
-      totalOffice: r.counts.WFO + r.counts.CLT,
+  const lessThan4Days: LessThan4Row[] = ranked
+    .filter((row) => row.counts.WFO + row.counts.CLT < 4)
+    .map((row) => ({
+      employeeId: row.emp.employeeId,
+      name: row.emp.fullName,
+      designation: row.emp.designation,
+      team: row.emp.team,
+      totalOffice: row.counts.WFO + row.counts.CLT,
     }));
 
-  // Step 6: Fully Remote (WFH > 0 and WFO = 0 and CLT = 0)
-  const fullyRemoteList: FullyRemoteRow[] = ranked
-    .filter((r) => r.counts.WFH > 0 && r.counts.WFO === 0 && r.counts.CLT === 0)
-    .map((r) => ({
-      employeeId: r.emp.employeeId,
-      name: r.emp.fullName,
-      designation: r.emp.designation,
-      team: r.emp.team,
-      wfh: r.counts.WFH,
+  const fullyRemote: FullyRemoteRow[] = ranked
+    .filter((row) => row.counts.WFH > 0 && row.counts.WFO === 0 && row.counts.CLT === 0)
+    .map((row) => ({
+      employeeId: row.emp.employeeId,
+      name: row.emp.fullName,
+      designation: row.emp.designation,
+      team: row.emp.team,
+      wfh: row.counts.WFH,
     }));
 
   return {
     leaderboard,
     top5,
     consistentInOffice,
-    lessThan4,
-    fullyRemote: fullyRemoteList,
+    lessThan4Days,
+    fullyRemote,
   };
 }
 
-/**
- * Generate Analytics CSV with logical sections
- */
-export function generateAnalyticsCSV(
-  data: AnalyticsExportData,
-  periodLabel: string
-): string {
-  const lines: string[] = [];
-
-  // Helper to escape CSV values
-  const escapeCSV = (val: any) => {
-    const str = String(val ?? "");
-    return `"${str.replace(/"/g, '""')}"`;
-  };
-
-  // Header
-  lines.push(`Attendance Analytics Report - ${periodLabel}`);
-  lines.push(`Generated: ${format(new Date(), "d MMM yyyy · hh:mm a")}`);
-  lines.push("");
-
-  // Section 1: Leaderboard
-  lines.push("=== LEADERBOARD ===");
-  lines.push(
-    [
-      "Rank",
-      "Employee ID",
-      "Name",
-      "Designation",
-      "Team",
-      "WFO",
-      "CLT",
-      "WFH",
-      "PTO",
-      "HOL",
-      "Total Office Days",
-    ]
-      .map(escapeCSV)
-      .join(",")
-  );
-  data.leaderboard.forEach((row) => {
-    lines.push(
-      [
+function buildAnalyticsSections(data: AnalyticsExportData): AnalyticsSection[] {
+  return [
+    {
+      title: "1. LEADERBOARD - ALL EMPLOYEES",
+      headers: ["Rank", "Emp ID", "Name", "Designation", "Team", "WFO", "CLT", "WFH", "PTO", "HOL", "Total Working Days", "% of (WFO + CLT)", "3 (WFO + CLT) per Week"],
+      rows: data.leaderboard.map((row) => [
         row.rank,
         row.employeeId,
         row.name,
@@ -208,172 +197,178 @@ export function generateAnalyticsCSV(
         row.wfh,
         row.pto,
         row.hol,
+        row.totalWorkingDays,
+        `${row.officePct}%`,
+        row.meetsThreePerWeek ? "Yes" : "No",
+      ]),
+    },
+    {
+      title: "2. TOP 5 EMPLOYEES BY OFFICE PRESENCE (WFO + CLT)",
+      headers: ["Rank", "Emp ID", "Name", "Designation", "Team", "Total Office Days"],
+      rows: data.top5.map((row) => [
+        row.rank,
+        row.employeeId,
+        row.name,
+        row.designation,
+        row.team,
         row.totalOffice,
-      ]
-        .map(escapeCSV)
-        .join(",")
-    );
-  });
+      ]),
+    },
+    {
+      title: "3. CONSISTENT IN-OFFICE EMPLOYEES (>= 12 DAYS)",
+      headers: ["Emp ID", "Name", "Designation", "Team", "Total Office Days"],
+      rows: data.consistentInOffice.map((row) => [
+        row.employeeId,
+        row.name,
+        row.designation,
+        row.team,
+        row.totalOffice,
+      ]),
+    },
+    {
+      title: "4. EMPLOYEES WITH LESS THAN 4 OFFICE DAYS",
+      headers: ["Emp ID", "Name", "Designation", "Team", "Total Office Days"],
+      rows: data.lessThan4Days.map((row) => [
+        row.employeeId,
+        row.name,
+        row.designation,
+        row.team,
+        row.totalOffice,
+      ]),
+    },
+    {
+      title: "5. FULLY REMOTE EMPLOYEES (WFO = 0, CLT = 0, WFH > 0)",
+      headers: ["Emp ID", "Name", "Designation", "Team", "WFH Days"],
+      rows: data.fullyRemote.map((row) => [
+        row.employeeId,
+        row.name,
+        row.designation,
+        row.team,
+        row.wfh,
+      ]),
+    },
+  ];
+}
+
+/**
+ * Generate analytics CSV from the same section data used by the PDF export.
+ */
+export function generateAnalyticsCSV(
+  data: AnalyticsExportData,
+  periodLabel: string
+): string {
+  const lines: string[] = [];
+  const sections = buildAnalyticsSections(data);
+
+  const escapeCSV = (value: string | number | boolean) => {
+    const safeValue = String(value ?? "");
+    return `"${safeValue.replace(/"/g, '""')}"`;
+  };
+
+  lines.push(`Employee Attendance Report (${periodLabel})`);
+  lines.push(`Generated: ${format(new Date(), "d MMM yyyy, hh:mm a")}`);
   lines.push("");
 
-  // Section 2: Top 5
-  lines.push("=== TOP 5 EMPLOYEES BY OFFICE PRESENCE ===");
-  lines.push(
-    ["Rank", "Employee ID", "Name", "Designation", "Team", "Total Office Days"]
-      .map(escapeCSV)
-      .join(",")
-  );
-  data.top5.forEach((row) => {
-    lines.push(
-      [row.rank, row.employeeId, row.name, row.designation, row.team, row.totalOffice]
-        .map(escapeCSV)
-        .join(",")
-    );
-  });
-  lines.push("");
-
-  // Section 3: Consistent In Office
-  lines.push("=== CONSISTENT IN-OFFICE EMPLOYEES (>=12 days) ===");
-  lines.push(
-    ["Employee ID", "Name", "Designation", "Team", "Total Office Days"]
-      .map(escapeCSV)
-      .join(",")
-  );
-  data.consistentInOffice.forEach((row) => {
-    lines.push(
-      [row.employeeId, row.name, row.designation, row.team, row.totalOffice]
-        .map(escapeCSV)
-        .join(",")
-    );
-  });
-  lines.push("");
-
-  // Section 4: Less Than 4 Days
-  lines.push("=== EMPLOYEES WITH LESS THAN 4 OFFICE DAYS ===");
-  lines.push(
-    ["Employee ID", "Name", "Designation", "Team", "Total Office Days"]
-      .map(escapeCSV)
-      .join(",")
-  );
-  data.lessThan4.forEach((row) => {
-    lines.push(
-      [row.employeeId, row.name, row.designation, row.team, row.totalOffice]
-        .map(escapeCSV)
-        .join(",")
-    );
-  });
-  lines.push("");
-
-  // Section 5: Fully Remote
-  lines.push("=== FULLY REMOTE EMPLOYEES ===");
-  lines.push(["Employee ID", "Name", "Designation", "Team", "WFH Days"].map(escapeCSV).join(","));
-  data.fullyRemote.forEach((row) => {
-    lines.push(
-      [row.employeeId, row.name, row.designation, row.team, row.wfh]
-        .map(escapeCSV)
-        .join(",")
-    );
+  sections.forEach((section) => {
+    lines.push(`=== ${section.title} ===`);
+    lines.push(section.headers.map(escapeCSV).join(","));
+    section.rows.forEach((row) => {
+      lines.push(row.map(escapeCSV).join(","));
+    });
+    if (section.rows.length === 0) {
+      lines.push('"No records for this section in the selected range."');
+    }
+    lines.push("");
   });
 
   return lines.join("\n");
 }
 
 /**
- * Generate Analytics PDF with properly formatted sections
+ * Generate analytics PDF using the same sections and values as the CSV export.
  */
 export function generateAnalyticsPDF(
   data: AnalyticsExportData,
   periodLabel: string
 ): void {
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+  const sections = buildAnalyticsSections(data);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
   let yPosition = 40;
 
-  // Helper to add section
-  const addSection = (title: string, columnHeaders: string[], rows: (string | number)[][]): void => {
-    // Add title
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text(title, 40, yPosition);
-    yPosition += 18;
-
-    // Add table
-    autoTable(doc, {
-      startY: yPosition,
-      head: [columnHeaders],
-      body: rows,
-      styles: { fontSize: 8, cellPadding: 4 },
-      headStyles: { fillColor: [60, 80, 180], textColor: 255, fontStyle: "bold" },
-      alternateRowStyles: { fillColor: [245, 247, 252] },
-      didDrawPage: () => {
-        // Footer
-        const pageSize = doc.internal.pageSize;
-        const pageHeight = pageSize.getHeight();
-        doc.setFontSize(9);
-        doc.setTextColor(150);
-        doc.text(`Page ${doc.internal.pages.length}`, 40, pageHeight - 20);
-      },
-    });
-
-    // Update position after table
-    yPosition = (doc as any).lastAutoTable?.finalY + 18 ?? yPosition + 100;
-
-    // Add page break if needed
-    if (yPosition > 500) {
-      doc.addPage();
-      yPosition = 40;
+  const addFooter = () => {
+    const pageCount = doc.getNumberOfPages();
+    for (let page = 1; page <= pageCount; page++) {
+      doc.setPage(page);
+      doc.setFontSize(9);
+      doc.setTextColor(150);
+      doc.text(`Page ${page}`, 40, pageHeight - 20);
     }
   };
 
-  // Header
+  const ensureSpace = (requiredHeight: number) => {
+    if (yPosition + requiredHeight <= pageHeight - 36) return;
+    doc.addPage();
+    yPosition = 40;
+  };
+
+  const addSection = (section: AnalyticsSection) => {
+    ensureSpace(section.rows.length === 0 ? 72 : 110);
+
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0);
+    doc.text(section.title, 40, yPosition);
+    yPosition += 18;
+
+    if (section.rows.length === 0) {
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(120);
+      doc.text("No records for this section in the selected range.", 40, yPosition + 10);
+      yPosition += 34;
+      return;
+    }
+
+    autoTable(doc, {
+      startY: yPosition,
+      head: [section.headers],
+      body: section.rows.map((row) => row.map((cell) => String(cell ?? ""))),
+      theme: "grid",
+      styles: {
+        fontSize: 8,
+        cellPadding: 4,
+        overflow: "linebreak",
+        textColor: 40,
+      },
+      headStyles: {
+        fillColor: [60, 80, 180],
+        textColor: 255,
+        fontStyle: "bold",
+      },
+      alternateRowStyles: { fillColor: [245, 247, 252] },
+      margin: { left: 40, right: 40, top: 40, bottom: 36 },
+      tableWidth: pageWidth - 80,
+    });
+
+    yPosition = ((doc as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY ?? yPosition) + 18;
+  };
+
   doc.setFontSize(16);
   doc.setFont("helvetica", "bold");
-  doc.text("Attendance Analytics Report", 40, yPosition);
+  doc.setTextColor(0);
+  doc.text(`Employee Attendance Report (${periodLabel})`, 40, yPosition);
   yPosition += 18;
 
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
   doc.setTextColor(120);
-  doc.text(`Period: ${periodLabel}`, 40, yPosition);
-  yPosition += 14;
-  doc.text(`Generated: ${format(new Date(), "d MMM yyyy · hh:mm a")}`, 40, yPosition);
+  doc.text(`Generated: ${format(new Date(), "d MMM yyyy, hh:mm a")}`, 40, yPosition);
   yPosition += 24;
-  doc.setTextColor(0);
 
-  // Section 1: Leaderboard
-  addSection(
-    "1. LEADERBOARD - ALL EMPLOYEES",
-    ["Rank", "Emp ID", "Name", "Designation", "Team", "WFO", "CLT", "WFH", "PTO", "HOL", "Total Office"],
-    data.leaderboard.map((r) => [r.rank, r.employeeId, r.name, r.designation, r.team, r.wfo, r.clt, r.wfh, r.pto, r.hol, r.totalOffice])
-  );
+  sections.forEach(addSection);
+  addFooter();
 
-  // Section 2: Top 5
-  addSection(
-    "2. TOP 5 EMPLOYEES BY OFFICE PRESENCE (WFO + CLT)",
-    ["Rank", "Emp ID", "Name", "Designation", "Team", "Total Office Days"],
-    data.top5.map((r) => [r.rank, r.employeeId, r.name, r.designation, r.team, r.totalOffice])
-  );
-
-  // Section 3: Consistent In Office
-  addSection(
-    "3. CONSISTENT IN-OFFICE EMPLOYEES (≥12 Days)",
-    ["Emp ID", "Name", "Designation", "Team", "Total Office Days"],
-    data.consistentInOffice.map((r) => [r.employeeId, r.name, r.designation, r.team, r.totalOffice])
-  );
-
-  // Section 4: Less Than 4 Days
-  addSection(
-    "4. EMPLOYEES WITH LESS THAN 4 OFFICE DAYS",
-    ["Emp ID", "Name", "Designation", "Team", "Total Office Days"],
-    data.lessThan4.map((r) => [r.employeeId, r.name, r.designation, r.team, r.totalOffice])
-  );
-
-  // Section 5: Fully Remote
-  addSection(
-    "5. FULLY REMOTE EMPLOYEES (WFO=0, CLT=0, WFH>0)",
-    ["Emp ID", "Name", "Designation", "Team", "WFH Days"],
-    data.fullyRemote.map((r) => [r.employeeId, r.name, r.designation, r.team, r.wfh])
-  );
-
-  // Save
   doc.save(`analytics-report-${format(new Date(), "yyyy-MM-dd")}.pdf`);
 }

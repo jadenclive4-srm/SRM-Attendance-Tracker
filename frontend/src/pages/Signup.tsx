@@ -88,14 +88,6 @@ export default function Signup() {
     return "";
   };
 
-  const validateState = (state: string): string => {
-    if (!state) return "State is required";
-    if (!INDIAN_STATES.includes(state)) {
-      return "Please select a valid state";
-    }
-    return "";
-  };
-
   const validatePasswords = (): string => {
     if (!form.password) return "Password is required";
     if (!form.confirm) return "Confirm password is required";
@@ -119,10 +111,6 @@ export default function Signup() {
     // Email validation
     const emailError = validateEmail(form.email);
     if (emailError) newErrors.email = emailError;
-
-    // State validation
-    const stateError = validateState(form.state);
-    if (stateError) newErrors.state = stateError;
 
     // Password validation
     const passwordError = validatePasswords();
@@ -225,7 +213,7 @@ export default function Signup() {
               <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">Address</h3>
               <div className="grid sm:grid-cols-2 gap-5">
                 <Field label="City"><Input value={form.city} onChange={e => set("city", e.target.value)} /></Field>
-                <Field label="State" required error={errors.state}>
+                <Field label="State" error={errors.state}>
                   <Select value={form.state} onValueChange={v => set("state", v)}>
                     <SelectTrigger className={errors.state ? "border-red-500" : ""}>
                       <SelectValue placeholder="Select State" />

@@ -1,20 +1,20 @@
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
-import DateRangePicker from "@/components/DateRangePicker";
-import { DateRange, defaultRange, rangeLabel } from "@/lib/dateRange";
 import { Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Employee, AttendanceRecord } from "@/lib/types";
 import { buildAnalyticsReport, generateAnalyticsCSV, generateAnalyticsPDF } from "@/lib/analyticsExport";
+import { DateRange, defaultRange, rangeLabel } from "@/lib/dateRange";
+import { AttendanceRecord, Employee } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import DateRangePicker from "@/components/DateRangePicker";
 
 export type ExportFormat = "pdf" | "csv";
 
 interface Props {
   open: boolean;
-  onOpenChange: (o: boolean) => void;
+  onOpenChange: (open: boolean) => void;
   employees: Employee[];
   attendance: Record<string, AttendanceRecord[]>;
   initialRange?: DateRange;
@@ -33,11 +33,11 @@ export default function FullReportAnalyticsDialog({
 
   const handleDownload = async () => {
     if (busy) return;
+
     setBusy(true);
     try {
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((resolve) => setTimeout(resolve, 600));
 
-      // Build analytics report
       const analyticsData = buildAnalyticsReport(employees, attendance, range);
       const periodLabel = rangeLabel(range);
 
@@ -47,28 +47,20 @@ export default function FullReportAnalyticsDialog({
         const csv = generateAnalyticsCSV(analyticsData, periodLabel);
         const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `analytics-report-${new Date().toISOString().split("T")[0]}.csv`;
-        a.click();
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `analytics-report-${new Date().toISOString().split("T")[0]}.csv`;
+        anchor.click();
         URL.revokeObjectURL(url);
       }
 
-      // Count total rows for feedback
-      const totalRows =
-        analyticsData.leaderboard.length +
-        analyticsData.top5.length +
-        analyticsData.consistentInOffice.length +
-        analyticsData.lessThan4.length +
-        analyticsData.fullyRemote.length;
-
       toast.success(`${fmt.toUpperCase()} report downloaded`, {
-        description: `${analyticsData.leaderboard.length} employees · ${analyticsData.top5.length} top performers · ${periodLabel}`,
+        description: `${analyticsData.leaderboard.length} employees | ${analyticsData.top5.length} top performers | ${periodLabel}`,
       });
       onOpenChange(false);
-    } catch (e) {
+    } catch (error) {
       toast.error("Failed to generate report");
-      console.error(e);
+      console.error(error);
     } finally {
       setBusy(false);
     }
@@ -77,7 +69,7 @@ export default function FullReportAnalyticsDialog({
   const hasData = employees.length > 0;
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !busy && onOpenChange(o)}>
+    <Dialog open={open} onOpenChange={(nextOpen) => !busy && onOpenChange(nextOpen)}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Export Full Analytics Report</DialogTitle>
@@ -88,7 +80,7 @@ export default function FullReportAnalyticsDialog({
 
         <div className="space-y-5 pt-1">
           <div>
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+            <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Date Range
             </Label>
             <div className="mt-2">
@@ -97,13 +89,17 @@ export default function FullReportAnalyticsDialog({
           </div>
 
           <div>
-            <Label className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+            <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Format
             </Label>
-            <RadioGroup value={fmt} onValueChange={(v) => setFmt(v as ExportFormat)} className="grid grid-cols-2 gap-3 mt-2">
+            <RadioGroup
+              value={fmt}
+              onValueChange={(value) => setFmt(value as ExportFormat)}
+              className="mt-2 grid grid-cols-2 gap-3"
+            >
               <label
                 htmlFor="pdf"
-                className={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-all ${
+                className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all ${
                   fmt === "pdf" ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
                 }`}
               >
@@ -114,9 +110,10 @@ export default function FullReportAnalyticsDialog({
                   <p className="text-[11px] text-muted-foreground">Print-ready</p>
                 </div>
               </label>
+
               <label
                 htmlFor="csv"
-                className={`flex items-center gap-3 rounded-xl border p-3 cursor-pointer transition-all ${
+                className={`flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-all ${
                   fmt === "csv" ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
                 }`}
               >
@@ -130,21 +127,21 @@ export default function FullReportAnalyticsDialog({
             </RadioGroup>
           </div>
 
-          <div className="rounded-xl bg-muted/50 px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center justify-between rounded-xl bg-muted/50 px-4 py-3">
             <p className="text-xs text-muted-foreground">Employees in database</p>
             <p className={`text-sm font-bold tabular-nums ${hasData ? "text-foreground" : "text-muted-foreground"}`}>
               {employees.length}
             </p>
           </div>
 
-          <div className="text-xs text-muted-foreground space-y-1 bg-muted/30 rounded-lg p-3">
+          <div className="space-y-1 rounded-lg bg-muted/30 p-3 text-xs text-muted-foreground">
             <p className="font-semibold text-foreground">Report includes:</p>
-            <ul className="space-y-1 ml-2">
-              <li>• Leaderboard (all employees)</li>
-              <li>• Top 5 employees by office presence</li>
-              <li>• Consistent in-office employees (≥12 days)</li>
-              <li>• Employees with &lt;4 office days</li>
-              <li>• Fully remote employees</li>
+            <ul className="ml-2 space-y-1">
+              <li>- Leaderboard (all employees)</li>
+              <li>- Top 5 employees by office presence</li>
+              <li>- Consistent in-office employees (&gt;= 12 days)</li>
+              <li>- Employees with &lt; 4 office days</li>
+              <li>- Fully remote employees</li>
             </ul>
           </div>
         </div>
@@ -156,11 +153,11 @@ export default function FullReportAnalyticsDialog({
           <Button onClick={handleDownload} disabled={!hasData || busy}>
             {busy ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Generating…
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating...
               </>
             ) : (
               <>
-                <Download className="h-4 w-4 mr-2" /> Download {fmt.toUpperCase()}
+                <Download className="mr-2 h-4 w-4" /> Download {fmt.toUpperCase()}
               </>
             )}
           </Button>

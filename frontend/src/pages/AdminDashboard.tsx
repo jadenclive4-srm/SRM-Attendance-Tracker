@@ -3,7 +3,7 @@ import { AttendanceRecord, AttendanceStatus, Employee, STATUS_COLOR } from "@/li
 import { countByStatus, dateKey } from "@/lib/attendance";
 import { getAttendanceForEmployees, getEmployees } from "@/lib/api";
 import StatCard from "@/components/StatCard";
-import { Users, CheckCircle2, AlertCircle, Trophy, FileText } from "lucide-react";
+import { Users, CheckCircle2, AlertCircle, Trophy, FileText, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { eachDayOfInterval, format } from "date-fns";
@@ -128,6 +128,14 @@ export default function AdminDashboard() {
   // Export modal
   const [reportOpen, setReportOpen] = useState(false);
 
+  const rangeLabel = useMemo(() => {
+    if (range.preset === "today") return `Today · ${format(range.from, "d MMM yyyy")}`;
+    if (range.preset === "week") return `This Week · ${format(range.from, "d MMM")} – ${format(range.to, "d MMM yyyy")}`;
+    if (range.preset === "month") return `${format(range.from, "MMMM yyyy")}`;
+    if (range.preset === "custom") return `${format(range.from, "d MMM yyyy")} – ${format(range.to, "d MMM yyyy")}`;
+    return "";
+  }, [range]);
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
@@ -164,12 +172,7 @@ export default function AdminDashboard() {
             <Trophy className="h-4 w-4 text-warning" />
             <div>
               <h3 className="font-bold">Leaderboard</h3>
-              <p className="text-xs text-muted-foreground">
-                {range.preset === "today" && `Today · ${format(range.from, "d MMM yyyy")}`}
-                {range.preset === "week" && `This Week · ${format(range.from, "d MMM")} – ${format(range.to, "d MMM yyyy")}`}
-                {range.preset === "month" && `${format(range.from, "MMMM yyyy")}`}
-                {range.preset === "custom" && `${format(range.from, "d MMM yyyy")} – ${format(range.to, "d MMM yyyy")}`}
-              </p>
+              <p className="text-xs text-muted-foreground">{rangeLabel}</p>
             </div>
           </div>
         </div>
@@ -241,20 +244,33 @@ export default function AdminDashboard() {
       </Card>
 
       {/* Insights */}
-      <div className="grid md:grid-cols-2 gap-6">
-        <InsightCard title="Top 5 — WFO + CLT" subtitle="Most office presence in range"
-          items={top5OfficeClient.map(r => ({ emp: r.emp, value: `${r.counts.WFO + r.counts.CLT} days` }))} />
-        <InsightCard title="≥ 12 office days" subtitle="Consistent in-office collaborators"
-          items={avgOver3PerWeek.slice(0, 5).map(r => ({ emp: r.emp, value: `${r.counts.WFO + r.counts.CLT} days` }))}
-          empty="No employees meet this threshold" />
-        <InsightCard title="< 4 office days" subtitle="May need a check-in"
-          items={below4PerMonth.slice(0, 5).map(r => ({ emp: r.emp, value: `${r.counts.WFO + r.counts.CLT} days` }))}
-          tone="warning"
-          empty="Everyone is on track 🎉" />
-        <InsightCard title="Fully Remote" subtitle="No office or client visits"
-          items={fullyWFH.slice(0, 5).map(r => ({ emp: r.emp, value: `${r.counts.WFH} WFH` }))}
-          empty="No fully remote employees" />
-      </div>
+      <Card className="card-soft overflow-hidden">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-primary" />
+            <div>
+              <h3 className="font-bold">Insights & Analytics</h3>
+              <p className="text-xs text-muted-foreground">{rangeLabel}</p>
+            </div>
+          </div>
+        </div>
+        <div className="p-6">
+          <div className="grid md:grid-cols-2 gap-6">
+            <InsightCard title="Top 5 — WFO + CLT" subtitle="Most office presence in range"
+              items={top5OfficeClient.map(r => ({ emp: r.emp, value: `${r.counts.WFO + r.counts.CLT} days` }))} />
+            <InsightCard title="≥ 12 office days" subtitle="Consistent in-office collaborators"
+              items={avgOver3PerWeek.slice(0, 5).map(r => ({ emp: r.emp, value: `${r.counts.WFO + r.counts.CLT} days` }))}
+              empty="No employees meet this threshold" />
+            <InsightCard title="< 4 office days" subtitle="May need a check-in"
+              items={below4PerMonth.slice(0, 5).map(r => ({ emp: r.emp, value: `${r.counts.WFO + r.counts.CLT} days` }))}
+              tone="warning"
+              empty="Everyone is on track 🎉" />
+            <InsightCard title="Fully Remote" subtitle="No office or client visits"
+              items={fullyWFH.slice(0, 5).map(r => ({ emp: r.emp, value: `${r.counts.WFH} WFH` }))}
+              empty="No fully remote employees" />
+          </div>
+        </div>
+      </Card>
 
       <FullReportAnalyticsDialog
         open={reportOpen}

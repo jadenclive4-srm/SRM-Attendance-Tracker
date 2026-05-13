@@ -11,9 +11,11 @@ export interface DateRange {
 }
 
 export function rangeToday(): DateRange {
-  const d = new Date(); d.setHours(0,0,0,0);
-  return { preset: "today", from: d, to: d };
+  const day = new Date();
+  day.setHours(0, 0, 0, 0);
+  return { preset: "today", from: day, to: day };
 }
+
 export function rangeThisWeek(): DateRange {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -24,6 +26,7 @@ export function rangeThisWeek(): DateRange {
   const to = weekEnd > today ? today : weekEnd;
   return { preset: "week", from, to };
 }
+
 export function rangeThisMonth(): DateRange {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -34,59 +37,79 @@ export function rangeThisMonth(): DateRange {
   return { preset: "month", from, to };
 }
 
-export function defaultRange(): DateRange { return rangeThisMonth(); }
-
-export function inRange(date: string, r: DateRange) {
-  const d = new Date(date); d.setHours(0,0,0,0);
-  const f = new Date(r.from); f.setHours(0,0,0,0);
-  const t = new Date(r.to); t.setHours(23,59,59,999);
-  return d >= f && d <= t;
+export function defaultRange(): DateRange {
+  return rangeThisMonth();
 }
 
-export function filterRecords(records: AttendanceRecord[], r: DateRange) {
-  return records.filter(rec => inRange(rec.date, r));
+export function inRange(date: string, range: DateRange) {
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
+
+  const from = new Date(range.from);
+  from.setHours(0, 0, 0, 0);
+
+  const to = new Date(range.to);
+  to.setHours(23, 59, 59, 999);
+
+  return day >= from && day <= to;
 }
 
-export function rangeLabel(r: DateRange) {
-  if (r.preset === "today") return `Today · ${format(r.from, "d MMM yyyy")}`;
-  if (r.preset === "week") return `This Week · ${format(r.from, "d MMM")} – ${format(r.to, "d MMM")}`;
-  if (r.preset === "month") return `${format(r.from, "MMMM yyyy")}`;
-  return `${format(r.from, "d MMM yyyy")} – ${format(r.to, "d MMM yyyy")}`;
+export function filterRecords(records: AttendanceRecord[], range: DateRange) {
+  return records.filter((record) => inRange(record.date, range));
 }
 
-export function rangeDays(r: DateRange): Date[] {
+export function rangeLabel(range: DateRange) {
+  if (range.preset === "today") return `Today | ${format(range.from, "d MMM yyyy")}`;
+  if (range.preset === "week") return `This Week | ${format(range.from, "d MMM")} - ${format(range.to, "d MMM")}`;
+  if (range.preset === "month") return format(range.from, "MMMM yyyy");
+  return `${format(range.from, "d MMM yyyy")} - ${format(range.to, "d MMM yyyy")}`;
+}
+
+export function rangeDays(range: DateRange): Date[] {
   const days: Date[] = [];
-  const cur = new Date(r.from); cur.setHours(0,0,0,0);
-  const end = new Date(r.to); end.setHours(0,0,0,0);
-  while (cur <= end) {
-    days.push(new Date(cur));
-    cur.setDate(cur.getDate() + 1);
+  const current = new Date(range.from);
+  current.setHours(0, 0, 0, 0);
+
+  const end = new Date(range.to);
+  end.setHours(0, 0, 0, 0);
+
+  while (current <= end) {
+    days.push(new Date(current));
+    current.setDate(current.getDate() + 1);
   }
+
   return days;
 }
 
 export function dayDistribution(
   attendance: Record<string, AttendanceRecord[]>,
   employeeIds: string[],
-  r: DateRange
+  range: DateRange
 ) {
-  const days = rangeDays(r);
-  return days.map(d => {
-    const key = dateKey(d);
+  const days = rangeDays(range);
+  return days.map((day) => {
+    const key = dateKey(day);
     const counts: Record<AttendanceStatus | "NONE", number> = {
-      WFO:0, WFH:0, CLT:0, PTO:0, HOL:0, NONE:0,
+      WFO: 0,
+      WFH: 0,
+      CLT: 0,
+      PTO: 0,
+      HOL: 0,
+      NONE: 0,
     };
-    const dow = d.getDay();
-    const isWeekend = dow === 0 || dow === 6;
-    employeeIds.forEach(id => {
-      const rec = (attendance[id] || []).find(x => x.date === key);
-      if (rec) counts[rec.status]++;
+
+    const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+
+    employeeIds.forEach((employeeId) => {
+      const record = (attendance[employeeId] || []).find((entry) => entry.date === key);
+      if (record) counts[record.status]++;
       else if (!isWeekend) counts.NONE++;
     });
+
     return {
       key,
-      date: d,
-      label: format(d, "dd MMM"),
+      date: day,
+      label: format(day, "dd MMM"),
       ...counts,
     };
   });
