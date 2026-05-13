@@ -1,3 +1,10 @@
+# ============================================
+# SRM Attendance Tracker - Docker Compose
+# For LOCAL DEVELOPMENT only
+# ============================================
+# For Render deployment, only the backend Dockerfile is used.
+# Frontend is deployed separately on Vercel.
+# ============================================
 version: '3.9'
 
 services:
@@ -8,7 +15,13 @@ services:
     ports:
       - "9090:9090"
     environment:
+      - PORT=9090
       - SPRING_PROFILES_ACTIVE=prod
+      # Firebase credentials: mount serviceAccountKey.json locally
+      # Do NOT embed in the image
+    volumes:
+      # Mount Firebase service account key at runtime (not baked into image)
+      - ./backend/firebase/serviceAccountKey.json:/app/firebase/serviceAccountKey.json
     restart: always
 
   frontend:
@@ -19,4 +32,6 @@ services:
       - "5173:5173"
     depends_on:
       - backend
+    environment:
+      - VITE_API_URL=http://localhost:9090
     restart: always
