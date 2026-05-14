@@ -1,0 +1,40 @@
+# ============================================
+# SRM Attendance Tracker - Render Blueprint
+# Single service — Nginx serves the frontend + proxies /api/* to Spring Boot
+# ============================================
+# How to use:
+#   1. Push this repo to GitHub
+#   2. In Render Dashboard, click "New +" > "Blueprint"
+#   3. Connect your repo — Render will auto-detect this file
+#   4. Fill in the environment variables (marked with "CHANGE ME")
+#   5. Click "Apply" — Render provisions everything
+# ============================================
+
+services:
+  - type: web
+    name: srm-attendance-tracker
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    envVars:
+      - key: PORT
+        value: 8080
+
+      # Firebase Admin SDK — paste the entire serviceAccountKey.json as a single line
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false   # ← REQUIRED: Paste full Firebase service account JSON here
+
+      - key: FIREBASE_WEB_API_KEY
+        sync: false   # ← Set your Firebase Web API key
+
+      # Admin credentials (these are in application.properties as defaults)
+      - key: ADMIN_EMPLOYEE_ID
+        sync: false   # ← Optional: override admin employee ID
+      - key: ADMIN_PASSWORD
+        sync: false   # ← Optional: override admin password
+      - key: ADMIN_RECOVERY_EMAIL
+        sync: false   # ← Optional: override admin recovery email
+
+      - key: SPRING_PROFILES_ACTIVE
+        value: prod
