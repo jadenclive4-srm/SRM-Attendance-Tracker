@@ -1,6 +1,8 @@
 import { Employee, AttendanceRecord, DeletionRequest } from "./types";
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:9090";
+// On Render with Nginx proxy, API calls should be same-origin (empty string).
+// For local dev, set VITE_API_BASE_URL in frontend/.env or docker-compose override.
+const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {

@@ -12,9 +12,9 @@ COPY frontend/package*.json ./
 RUN npm ci --include=dev
 COPY frontend/ .
 
-# Accept API base URL at build time (optional — defaults to same-origin)
+# Accept API base URL at build time (optional — defaults to "" so API calls go through Nginx proxy)
 ARG VITE_API_BASE_URL
-ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL:-""}
 
 RUN npm run build
 
