@@ -40,7 +40,6 @@ RUN mvn dependency:go-offline -B -DskipTests || true
 
 # Copy source code
 COPY backend/src ./src
-COPY backend/.mvn ./.mvn 2>/dev/null || true
 
 # Build JAR (skip tests for faster builds)
 RUN mvn clean package -DskipTests -B -q && echo "✓ Backend build successful"
