@@ -62,6 +62,9 @@ WORKDIR /app
 # Copy frontend built assets into Nginx web root
 COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 
+# Verify frontend files were copied
+RUN ls -la /usr/share/nginx/html/ && test -f /usr/share/nginx/html/index.html || (echo "ERROR: Frontend index.html not found" && exit 1)
+
 # Copy backend JAR
 COPY --from=backend-builder /app/target/*.jar app.jar
 

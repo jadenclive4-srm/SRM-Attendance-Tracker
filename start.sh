@@ -48,8 +48,9 @@ fi
 
 nohup java -Dspring.profiles.active="${SPRING_PROFILES_ACTIVE:-prod}" \
      -Dcom.sun.management.jmxremote=false \
+     -Dserver.port="${BACKEND_PORT}" \
      -Xmx256m -Xms128m \
-     -jar /app/app.jar --server.port="${BACKEND_PORT}" > /tmp/spring.log 2>&1 &
+     -jar /app/app.jar > /tmp/spring.log 2>&1 &
 SPRING_PID=$!
 
 # Give the process a moment to verify it started
@@ -91,6 +92,16 @@ fi
 
 # 5. Start Nginx
 echo "[INFO] Starting Nginx on port ${NGINX_PORT}..."
+echo "[DEBUG] Checking frontend files..."
+ls -la /usr/share/nginx/html/ || true
+if [ ! -f /usr/share/nginx/html/index.html ]; then
+    echo "[ERROR] index.html not found in /usr/share/nginx/html/"
+    echo "[DEBUG] /usr/share/nginx/html contents:"
+    ls -la /usr/share/nginx/html/
+    exit 1
+fi
+echo "[DEBUG] Frontend files present"
+
 nginx -g "daemon off;" &
 NGINX_PID=$!
 echo "[INFO] Nginx started (PID: ${NGINX_PID})"
