@@ -29,19 +29,43 @@ echo "[DEBUG] Nginx config generated successfully"
 
 # 3. Start Spring Boot backend
 echo "[INFO] Starting Spring Boot on port ${BACKEND_PORT}..."
-if ! java -Dspring.profiles.active=${SPRING_PROFILES_ACTIVE:-prod} \
-     -Dcom.sun.management.jmxremote=false \
-     -Xmx256m -Xms128m \
-     -jar /app/app.jar --server.port=${BACKEND_PORT} > /tmp/spring.log 2>&1 &
-then
-    echo "[ERROR] Failed to start Spring Boot"
-    cat /tmp/spring.log
+echo "[DEBUG] Checking runtime files and tools..."
+ls -la /app || true
+if [ ! -f /app/app.jar ]; then
+    echo "[ERROR] app.jar not found at /app/app.jar"
+    ls -la /app
     exit 1
 fi
+if ! command -v java >/dev/null 2>&1; then
+    echo "[ERROR] Java runtime not found"
+    exit 1
+fi
+if [ -n "${FIREBASE_SERVICE_ACCOUNT_JSON:-}" ]; then
+    echo "[INFO] FIREBASE_SERVICE_ACCOUNT_JSON environment variable is set"
+else
+    echo "[INFO] FIREBASE_SERVICE_ACCOUNT_JSON environment variable is not set"
+fi
+
+nohup java -Dspring.profiles.active="${SPRING_PROFILES_ACTIVE:-prod}" \
+     -Dcom.sun.management.jmxremote=false \
+     -Xmx256m -Xms128m \
+     -jar /app/app.jar --server.port="${BACKEND_PORT}" > /tmp/spring.log 2>&1 &
 SPRING_PID=$!
+
+# Give the process a moment to verify it started
+echo "[DEBUG] Waiting 2 seconds for Spring Boot process to initialize..."
+sleep 2
+if ! kill -0 ${SPRING_PID} >/dev/null 2>&1; then
+    echo "[ERROR] Spring Boot process failed immediately after launch"
+    echo "[DEBUG] /tmp/spring.log contents:"
+    cat /tmp/spring.log
+    echo "[DEBUG] /app directory contents:"
+    ls -la /app
+    exit 1
+fi
+
 echo "[INFO] Spring Boot started (PID: ${SPRING_PID})"
 
-# 4. Wait for Spring Boot to be healthy
 echo "[INFO] Waiting for Spring Boot to be ready..."
 MAX_RETRIES=60
 RETRY_COUNT=0
