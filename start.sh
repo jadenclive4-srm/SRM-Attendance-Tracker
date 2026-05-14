@@ -1,55 +1,109 @@
 #!/bin/sh
 # ============================================
 # SRM Attendance Tracker - Startup Script
-# Handles Nginx config substitution and starts both Nginx + Spring Boot
+# Orchestrates Nginx (port 8080) + Spring Boot (port 8081)
 # ============================================
 
 set -e
 
-echo "=== Starting SRM Attendance Tracker ==="
+echo "========================================"
+echo "SRM Attendance Tracker - Container Start"
+echo "========================================"
 
-# Nginx port: use Render's $PORT or default to 8080
+# 1. Resolve port configuration
 NGINX_PORT="${PORT:-8080}"
-echo "Nginx will listen on port: ${NGINX_PORT}"
+BACKEND_PORT="8081"
 
-# Substitute ${PORT} placeholder in nginx.conf template
-envsubst '${PORT}' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf
+echo "[INFO] Configuration:"
+echo "  - Nginx port: ${NGINX_PORT}"
+echo "  - Backend port: ${BACKEND_PORT}"
+echo "  - Environment: ${SPRING_PROFILES_ACTIVE:-dev}"
 
-echo "Nginx config generated:"
-cat /etc/nginx/conf.d/default.conf
+# 2. Generate Nginx config from template
+echo "[INFO] Generating Nginx configuration..."
+if ! envsubst '${PORT}' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf; then
+    echo "[ERROR] Failed to generate Nginx config"
+    exit 1
+fi
+echo "[DEBUG] Nginx config generated successfully"
 
-# Start Spring Boot on port 8081 FIRST (it takes the longest to initialize)
-echo "Starting Spring Boot on port 8081..."
-java -jar /app/app.jar --server.port=8081 &
+# 3. Start Spring Boot backend
+echo "[INFO] Starting Spring Boot on port ${BACKEND_PORT}..."
+if ! java -Dspring.profiles.active=${SPRING_PROFILES_ACTIVE:-prod} \
+     -Dcom.sun.management.jmxremote=false \
+     -Xmx256m -Xms128m \
+     -jar /app/app.jar --server.port=${BACKEND_PORT} > /tmp/spring.log 2>&1 &
+then
+    echo "[ERROR] Failed to start Spring Boot"
+    cat /tmp/spring.log
+    exit 1
+fi
 SPRING_PID=$!
-echo "Spring Boot started with PID: ${SPRING_PID}"
+echo "[INFO] Spring Boot started (PID: ${SPRING_PID})"
 
-# Wait for Spring Boot to be ready before starting Nginx,
-# to prevent 502 Bad Gateway when Nginx proxies requests to a not-yet-ready backend.
-echo "Waiting for Spring Boot to be ready on port 8081..."
-MAX_RETRIES=45
+# 4. Wait for Spring Boot to be healthy
+echo "[INFO] Waiting for Spring Boot to be ready..."
+MAX_RETRIES=60
 RETRY_COUNT=0
+RETRY_INTERVAL=2
+
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if wget -q -O /dev/null http://127.0.0.1:8081/ 2>/dev/null; then
-        echo "Spring Boot is ready!"
+    if curl -sf http://127.0.0.1:${BACKEND_PORT}/actuator/health >/dev/null 2>&1; then
+        echo "[SUCCESS] Spring Boot is ready!"
         break
     fi
     RETRY_COUNT=$((RETRY_COUNT + 1))
-    echo "Waiting... attempt ${RETRY_COUNT}/${MAX_RETRIES}"
-    sleep 2
+    if [ $((RETRY_COUNT % 5)) -eq 0 ]; then
+        echo "[INFO] Still waiting... (${RETRY_COUNT}/${MAX_RETRIES})"
+    fi
+    sleep $RETRY_INTERVAL
 done
+
 if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
-    echo "WARNING: Spring Boot did not become ready within timeout. Starting Nginx anyway..."
+    echo "[WARNING] Spring Boot health check timeout after $((MAX_RETRIES * RETRY_INTERVAL))s"
+    echo "[DEBUG] Checking Spring Boot logs:"
+    tail -20 /tmp/spring.log
 fi
 
-# Start Nginx in the foreground (daemon off) in background
-echo "Starting Nginx..."
+# 5. Start Nginx
+echo "[INFO] Starting Nginx on port ${NGINX_PORT}..."
 nginx -g "daemon off;" &
 NGINX_PID=$!
-echo "Nginx started with PID: ${NGINX_PID}"
+echo "[INFO] Nginx started (PID: ${NGINX_PID})"
 
-# Trap SIGTERM and forward to child processes for graceful shutdown
-trap 'echo "Shutting down..."; kill $NGINX_PID $SPRING_PID 2>/dev/null; exit 0' SIGTERM SIGINT
+echo "========================================"
+echo "Container started successfully!"
+echo "  Frontend: http://0.0.0.0:${NGINX_PORT}"
+echo "  Backend:  http://127.0.0.1:${BACKEND_PORT}"
+echo "========================================"
 
-# Wait for any child process to exit
+# 6. Graceful shutdown handler
+shutdown_handler() {
+    echo ""
+    echo "[INFO] Shutdown signal received, gracefully stopping services..."
+    
+    # Stop Nginx
+    if [ -n "$NGINX_PID" ] && kill -0 $NGINX_PID 2>/dev/null; then
+        echo "[INFO] Stopping Nginx (PID: ${NGINX_PID})..."
+        kill -TERM $NGINX_PID 2>/dev/null || true
+        sleep 5
+        kill -9 $NGINX_PID 2>/dev/null || true
+    fi
+    
+    # Stop Spring Boot
+    if [ -n "$SPRING_PID" ] && kill -0 $SPRING_PID 2>/dev/null; then
+        echo "[INFO] Stopping Spring Boot (PID: ${SPRING_PID})..."
+        kill -TERM $SPRING_PID 2>/dev/null || true
+        sleep 5
+        kill -9 $SPRING_PID 2>/dev/null || true
+    fi
+    
+    echo "[INFO] Shutdown complete"
+    exit 0
+}
+
+trap shutdown_handler SIGTERM SIGINT
+
+# 7. Keep container running and wait for child processes
+echo "[INFO] Services running. Waiting for termination signal..."
 wait

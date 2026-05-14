@@ -1,13 +1,13 @@
 # ============================================
 # SRM Attendance Tracker - Render Blueprint
-# Single service — Nginx serves the frontend + proxies /api/* to Spring Boot
+# Production-ready single-service deployment
 # ============================================
-# How to use:
-#   1. Push this repo to GitHub
-#   2. In Render Dashboard, click "New +" > "Blueprint"
-#   3. Connect your repo — Render will auto-detect this file
-#   4. Fill in the environment variables (marked with "CHANGE ME")
-#   5. Click "Apply" — Render provisions everything
+# Deployment Instructions:
+#   1. Push repo to GitHub
+#   2. Render Dashboard → "New +" → "Blueprint"
+#   3. Connect repo (auto-detects render.yaml)
+#   4. Set environment variables (below)
+#   5. Click "Deploy"
 # ============================================
 
 services:
@@ -16,25 +16,45 @@ services:
     env: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    plan: starter
+    buildCommand: |
+      # Pre-build optimization
+      echo "Build started at $(date)"
+    plan: standard  # Use standard for better performance
+    healthCheckPath: /health
+    
     envVars:
+      # ===== Required Configuration =====
       - key: PORT
-        value: 8080
-
-      # Firebase Admin SDK — paste the entire serviceAccountKey.json as a single line
-      - key: FIREBASE_SERVICE_ACCOUNT_JSON
-        sync: false   # ← REQUIRED: Paste full Firebase service account JSON here
-
-      - key: FIREBASE_WEB_API_KEY
-        sync: false   # ← Set your Firebase Web API key
-
-      # Admin credentials (these are in application.properties as defaults)
-      - key: ADMIN_EMPLOYEE_ID
-        sync: false   # ← Optional: override admin employee ID
-      - key: ADMIN_PASSWORD
-        sync: false   # ← Optional: override admin password
-      - key: ADMIN_RECOVERY_EMAIL
-        sync: false   # ← Optional: override admin recovery email
-
+        value: "8080"
+      
       - key: SPRING_PROFILES_ACTIVE
         value: prod
+      
+      # Firebase Admin SDK - entire serviceAccountKey.json as single line
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false  # ← REQUIRED: Paste full Firebase JSON here
+      
+      - key: FIREBASE_WEB_API_KEY
+        sync: false  # ← REQUIRED: Set your Firebase Web API key
+      
+      # ===== Optional: Override Admin Credentials =====
+      # If not set, defaults from application.properties are used
+      - key: ADMIN_EMPLOYEE_ID
+        value: Admin323
+        sync: false
+      
+      - key: ADMIN_PASSWORD
+        sync: false  # ← Set secure password
+      
+      - key: ADMIN_RECOVERY_EMAIL
+        sync: false
+      
+      # ===== Optional: Performance Tuning =====
+      - key: JAVA_OPTS
+        value: "-Xmx512m -Xms256m"
+      
+      - key: SPRING_JPA_HIBERNATE_DDL_AUTO
+        value: validate  # Don't auto-create schema in production
+    
+    # Auto-deploy on push to main
+    autoDeploy: true
