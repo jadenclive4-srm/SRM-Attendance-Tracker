@@ -5,6 +5,7 @@ import attendance.example.backend.model.AttendanceRecord;
 import attendance.example.backend.service.AttendanceService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,6 +22,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/attendance")
+@CrossOrigin(origins = "https://srm-attendance-tracker-2.onrender.com")
 public class AttendanceController {
 
     private final AttendanceService attendanceService;

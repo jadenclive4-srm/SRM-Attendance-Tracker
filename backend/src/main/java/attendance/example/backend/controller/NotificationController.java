@@ -5,11 +5,13 @@ import attendance.example.backend.service.NotificationService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.CrossOrigin;
 
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/notifications")
+@CrossOrigin(origins = "https://srm-attendance-tracker-2.onrender.com")
 public class NotificationController {
 
     private final NotificationService notificationService;

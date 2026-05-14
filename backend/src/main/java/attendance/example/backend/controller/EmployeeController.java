@@ -6,6 +6,7 @@ import attendance.example.backend.model.Employee;
 import org.springframework.http.HttpStatus;
 import attendance.example.backend.service.EmployeeService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,6 +17,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/employees")
+@CrossOrigin(origins = "https://srm-attendance-tracker-2.onrender.com")
 public class EmployeeController {
 
     private final EmployeeService employeeService;
