@@ -13,11 +13,15 @@ echo "========================================"
 # 1. Resolve port configuration
 NGINX_PORT="${PORT:-8080}"
 BACKEND_PORT="8081"
+BACKEND_HEALTH_PATH="${BACKEND_HEALTH_PATH:-/backend}"
+JAVA_OPTS_RESOLVED="${JAVA_OPTS:--Xmx256m -Xms128m}"
 
 echo "[INFO] Configuration:"
 echo "  - Nginx port: ${NGINX_PORT}"
 echo "  - Backend port: ${BACKEND_PORT}"
+echo "  - Backend health path: ${BACKEND_HEALTH_PATH}"
 echo "  - Environment: ${SPRING_PROFILES_ACTIVE:-dev}"
+echo "  - Java opts: ${JAVA_OPTS_RESOLVED}"
 
 # 2. Generate Nginx config from template
 echo "[INFO] Generating Nginx configuration..."
@@ -49,7 +53,7 @@ fi
 nohup java -Dspring.profiles.active="${SPRING_PROFILES_ACTIVE:-prod}" \
      -Dcom.sun.management.jmxremote=false \
      -Dserver.port="${BACKEND_PORT}" \
-     -Xmx256m -Xms128m \
+     ${JAVA_OPTS_RESOLVED} \
      -jar /app/app.jar > /tmp/spring.log 2>&1 &
 SPRING_PID=$!
 
@@ -73,7 +77,7 @@ RETRY_COUNT=0
 RETRY_INTERVAL=2
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if curl -sf http://127.0.0.1:${BACKEND_PORT}/actuator/health >/dev/null 2>&1; then
+    if curl -sf http://127.0.0.1:${BACKEND_PORT}${BACKEND_HEALTH_PATH} >/dev/null 2>&1; then
         echo "[SUCCESS] Spring Boot is ready!"
         break
     fi
@@ -141,4 +145,17 @@ trap shutdown_handler SIGTERM SIGINT
 
 # 7. Keep container running and wait for child processes
 echo "[INFO] Services running. Waiting for termination signal..."
-wait
+while true; do
+    if ! kill -0 "$SPRING_PID" 2>/dev/null; then
+        echo "[ERROR] Spring Boot process exited unexpectedly"
+        tail -50 /tmp/spring.log || true
+        exit 1
+    fi
+
+    if ! kill -0 "$NGINX_PID" 2>/dev/null; then
+        echo "[ERROR] Nginx process exited unexpectedly"
+        exit 1
+    fi
+
+    sleep 5
+done
