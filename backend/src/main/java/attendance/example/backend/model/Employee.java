@@ -1,6 +1,8 @@
 package attendance.example.backend.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Employee {
 
@@ -17,8 +19,10 @@ public class Employee {
     private String status;
     @JsonIgnore
     private String role;
+    private List<AttendanceRecord> attendanceRecords;
 
     public Employee() {
+        this.attendanceRecords = new ArrayList<>();
     }
 
     public String getId() {
@@ -115,5 +119,13 @@ public class Employee {
 
     public void setRole(String role) {
         this.role = role;
+    }
+
+    public List<AttendanceRecord> getAttendanceRecords() {
+        return attendanceRecords;
+    }
+
+    public void setAttendanceRecords(List<AttendanceRecord> attendanceRecords) {
+        this.attendanceRecords = attendanceRecords;
     }
 }

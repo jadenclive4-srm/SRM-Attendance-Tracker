@@ -59,19 +59,19 @@ public class EmployeeService {
         return Optional.of(sanitize(employee));
     }
 
-    public Optional<Employee> findByEmployeeId(String employeeId) throws Exception {
+    public Employee findByEmployeeId(String employeeId) throws Exception {
         ApiFuture<QuerySnapshot> future = employeesCollection()
                 .whereEqualTo("employeeId", normalizeEmployeeId(employeeId))
                 .limit(1)
                 .get();
         List<QueryDocumentSnapshot> docs = future.get().getDocuments();
         if (docs.isEmpty()) {
-            return Optional.empty();
+            return null;
         }
         QueryDocumentSnapshot doc = docs.get(0);
         Employee employee = doc.toObject(Employee.class);
         employee.setId(doc.getId());
-        return Optional.of(sanitize(employee));
+        return sanitize(employee);
     }
 
     public Optional<Employee> findByEmail(String email) throws Exception {
@@ -125,7 +125,7 @@ public class EmployeeService {
 
     public void ensureUniqueSignup(SignupRequest request) throws Exception {
         String employeeId = resolveEmployeeId(request);
-        if (findByEmployeeId(employeeId).isPresent()) {
+        if (findByEmployeeId(employeeId) != null) {
             throw new ApiException(HttpStatus.CONFLICT, "Employee ID already exists");
         }
         if (findByEmail(request.getEmail()).isPresent()) {
@@ -150,8 +150,10 @@ public class EmployeeService {
 
     public DeletionRequest createDeletionRequest(String employeeId) throws Exception {
         String normalized = normalizeEmployeeId(employeeId);
-        Employee employee = findByEmployeeId(normalized)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Employee not found"));
+        Employee employee = findByEmployeeId(normalized);
+        if (employee == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Employee not found");
+        }
 
         Optional<DeletionRequest> existing = findDeletionRequestByEmployeeId(normalized);
         if (existing.isPresent()) {
@@ -213,8 +215,10 @@ public class EmployeeService {
         request.setReviewedAt(Instant.now().toString());
         deletionRequestsCollection().document(request.getId()).set(request).get();
 
-        Employee employee = findByEmployeeId(request.getEmployeeId())
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Employee not found"));
+        Employee employee = findByEmployeeId(request.getEmployeeId());
+        if (employee == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Employee not found");
+        }
         employee.setStatus("inactive");
         employeesCollection().document(employee.getId()).set(employee).get();
 
@@ -240,8 +244,10 @@ public class EmployeeService {
         request.setStatus("dismissed");
         deletionRequestsCollection().document(request.getId()).set(request).get();
 
-        Employee employee = findByEmployeeId(request.getEmployeeId())
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Employee not found"));
+        Employee employee = findByEmployeeId(request.getEmployeeId());
+        if (employee == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Employee not found");
+        }
 
         notificationService.createNotification(
                 employee.getId(),

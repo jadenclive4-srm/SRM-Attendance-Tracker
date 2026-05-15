@@ -3,6 +3,7 @@ package attendance.example.backend.service;
 import attendance.example.backend.dto.MonthlyDetailsResponse;
 import attendance.example.backend.exception.ApiException;
 import attendance.example.backend.model.AttendanceRecord;
+import attendance.example.backend.model.Employee;
 import com.google.cloud.firestore.CollectionReference;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
@@ -26,7 +27,7 @@ import java.util.Set;
 @Service
 public class AttendanceService {
 
-    private static final Set<String> ALLOWED_STATUSES = Set.of("WFO", "WFH", "CLT", "PTO", "HOL");
+    private static final Set<String> ALLOWED_STATUSES = Set.of("WFO", "WFH", "CLT", "PTO", "HOL", "WHO");
 
     private final Firestore firestore;
     private final EmployeeService employeeService;
@@ -239,9 +240,10 @@ public class AttendanceService {
         return value.trim();
     }
 
-    private CollectionReference attendanceCollection(String employeeId) {
+    private CollectionReference attendanceCollection(String employeeId) throws Exception {
+        Employee employee = employeeService.requireEmployee(employeeId);
         return firestore.collection("employees")
-                .document(employeeId)
+                .document(employee.getId())
                 .collection("attendance");
     }
 }

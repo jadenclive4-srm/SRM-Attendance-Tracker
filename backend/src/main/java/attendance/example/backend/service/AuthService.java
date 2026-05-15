@@ -89,13 +89,10 @@ public class AuthService {
             return new AuthResponse(adminUser, "admin");
         }
 
-        Employee employee = employeeService.findByEmployeeId(employeeId)
-                .orElseThrow(() ->
-                        new ApiException(
-                                HttpStatus.UNAUTHORIZED,
-                                "Invalid employee ID or password"
-                        )
-                );
+        Employee employee = employeeService.findByEmployeeId(employeeId);
+        if (employee == null) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "Invalid employee ID or password");
+        }
 
         if (employee.getStatus() != null && employee.getStatus().equalsIgnoreCase("inactive")) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "Account has been removed or deactivated");

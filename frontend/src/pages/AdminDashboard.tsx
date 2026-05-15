@@ -3,7 +3,7 @@ import { AttendanceRecord, AttendanceStatus, Employee, STATUS_COLOR } from "@/li
 import { countByStatus } from "@/lib/attendance";
 import { getAttendanceForEmployees, getEmployees } from "@/lib/api";
 import StatCard from "@/components/StatCard";
-import { Users, CheckCircle2, AlertCircle, Trophy, FileText, BarChart3, CalendarX2 } from "lucide-react";
+import { Users, CheckCircle2, AlertCircle, Trophy, FileText, BarChart3, CalendarX2, Loader2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { eachDayOfInterval, format } from "date-fns";
@@ -25,6 +25,13 @@ export default function AdminDashboard() {
   const [attendance, setAttendance] = useState<Record<string, AttendanceRecord[]>>({});
   const [markedTodayDialogOpen, setMarkedTodayDialogOpen] = useState(false);
   const [notMarkedDialogOpen, setNotMarkedDialogOpen] = useState(false);
+  const [yetToMarkDialogOpen, setYetToMarkDialogOpen] = useState(false);
+  const [excelImportOpen, setExcelImportOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState<number>(today.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
 
   const todayKey = format(today, "yyyy-MM-dd");
   const stats = useMemo(() => {
@@ -113,7 +120,6 @@ export default function AdminDashboard() {
   const fullyWFH = ranked.filter(r => r.counts.WFH > 0 && r.counts.WFO === 0 && r.counts.CLT === 0);
 
   // ── Yet to Mark Attendance (working days in range with no record) ──
-  const [yetToMarkDialogOpen, setYetToMarkDialogOpen] = useState(false);
 
   const yetToMarkAttendance = useMemo(() => {
     // Get all working days in the range (up to today)
@@ -161,10 +167,77 @@ export default function AdminDashboard() {
       .catch(() => setAttendance({}));
   }, [employees]);
 
-  // Export modal
-  const [reportOpen, setReportOpen] = useState(false);
+   // Export modal
+   const [reportOpen, setReportOpen] = useState(false);
 
-  const rangeLabel = useMemo(() => {
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        setSelectedFile(file);
+      }
+    };
+
+   const handleImportExcel = async () => {
+     setImporting(true);
+     setImportResult(null);
+
+     if (!selectedFile) {
+       setImportResult({ message: 'Please select a file', type: 'error' });
+       setImporting(false);
+       return;
+     }
+
+     try {
+       const formData = new FormData();
+       formData.append('file', selectedFile);
+       formData.append('month', selectedMonth.toString());
+       formData.append('year', selectedYear.toString());
+
+       const response = await fetch(`${import.meta.env.VITE_API_BASE_URL ?? ''}/api/attendance/import-excel`, {
+         method: 'POST',
+         body: formData,
+       });
+
+       if (!response.ok) {
+         const errorText = await response.text();
+         throw new Error(errorText || `HTTP error! status: ${response.status}`);
+       }
+
+       const result = await response.json();
+       
+        if (result.success) {
+          const message = `Import successful! Created ${result.createdEmployees?.length || 0} new employees and imported ${result.updatedAttendance?.length || 0} attendance records.`;
+          setImportResult({ message, type: 'success' });
+         
+         // Refresh employees and attendance data
+         getEmployees()
+           .then((data) => setEmployees(data))
+           .then(() => {
+             if (employees.length) {
+               getAttendanceForEmployees(employees.map(e => e.id))
+                 .then((data) => setAttendance(data));
+             }
+           })
+           .catch(() => {
+             setAttendance({});
+           });
+       } else {
+         setImportResult({ 
+           message: result.errors?.join(', ') || 'Import failed with unknown error', 
+           type: 'error' 
+         });
+       }
+     } catch (error: any) {
+       setImportResult({ 
+         message: error.message || 'An unexpected error occurred', 
+         type: 'error' 
+       });
+     } finally {
+       setImporting(false);
+     }
+   };
+
+   const rangeLabel = useMemo(() => {
     if (range.preset === "today") return `Today · ${format(range.from, "d MMM yyyy")}`;
     if (range.preset === "week") return `This Week · ${format(range.from, "d MMM")} – ${format(range.to, "d MMM yyyy")}`;
     if (range.preset === "month") return `${format(range.from, "MMMM yyyy")}`;
@@ -174,19 +247,22 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-8">
-      <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Admin Overview</h1>
-          <p className="text-sm text-muted-foreground mt-1">{format(today, "EEEE, d MMMM yyyy")}</p>
-          <div className="mt-2"><RangeContext value={range} /></div>
-        </div>
-        <div className="flex flex-wrap gap-2 items-center">
-          <DateRangePicker value={range} onChange={setRange} />
-          <Button onClick={() => setReportOpen(true)}>
-            <FileText className="h-4 w-4 mr-2" /> Full Report
-          </Button>
-        </div>
-      </div>
+        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+         <div>
+           <h1 className="text-2xl font-bold">Admin Overview</h1>
+           <p className="text-sm text-muted-foreground mt-1">{format(today, "EEEE, d MMMM yyyy")}</p>
+           <div className="mt-2"><RangeContext value={range} /></div>
+         </div>
+         <div className="flex flex-wrap gap-2 items-center">
+           <DateRangePicker value={range} onChange={setRange} />
+           <Button onClick={() => setReportOpen(true)}>
+             <FileText className="h-4 w-4 mr-2" /> Full Report
+           </Button>
+           <Button onClick={() => setExcelImportOpen(true)}>
+             <Upload className="h-4 w-4 mr-2" /> Import Excel
+           </Button>
+         </div>
+       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard label="Total Employees" value={stats.total} icon={Users} accent="primary" />
@@ -392,48 +468,138 @@ export default function AdminDashboard() {
         </DialogContent>
       </Dialog>
 
-      {/* Yet to Mark Attendance Dialog */}
-      <Dialog open={yetToMarkDialogOpen} onOpenChange={setYetToMarkDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Yet to Mark Attendance</DialogTitle>
-            <DialogDescription>
-              Employees who missed marking attendance on working days in {rangeLabel}
-            </DialogDescription>
-          </DialogHeader>
-          {yetToMarkAttendance.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-8 text-center">All employees marked on all days 🎉</p>
-          ) : (
-            <div className="space-y-4">
-              {yetToMarkAttendance.map(({ emp, missedDates }) => (
-                <div key={emp.id} className="rounded-lg border border-border p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="h-9 w-9 rounded-full grid place-items-center text-[11px] font-bold text-white"
-                        style={{ background: emp.avatarColor }}>
-                        {emp.fullName.split(" ").map(n=>n[0]).slice(0,2).join("")}
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium">{emp.fullName}</div>
-                        <div className="text-[11px] text-muted-foreground">{emp.employeeId} • {emp.designation}</div>
-                      </div>
-                    </div>
-                    <span className="text-sm font-bold text-destructive">{missedDates.length} missed</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {missedDates.map((date) => (
-                      <span key={date} className="inline-flex items-center px-2 py-1 rounded-md text-[11px] font-medium bg-destructive/10 text-destructive border border-destructive/20">
-                        <CalendarX2 className="h-3 w-3 mr-1" />
-                        {format(new Date(date + "T00:00:00"), "dd MMM")}
-                      </span>
-                    ))}
-                  </div>
+       {/* Yet to Mark Attendance Dialog */}
+       <Dialog open={yetToMarkDialogOpen} onOpenChange={setYetToMarkDialogOpen}>
+         <DialogContent className="sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+           <DialogHeader>
+             <DialogTitle>Yet to Mark Attendance</DialogTitle>
+             <DialogDescription>
+               Employees who missed marking attendance on working days in {rangeLabel}
+             </DialogDescription>
+           </DialogHeader>
+           {yetToMarkAttendance.length === 0 ? (
+             <p className="text-sm text-muted-foreground py-8 text-center">All employees marked on all days 🎉</p>
+           ) : (
+             <div className="space-y-4">
+               {yetToMarkAttendance.map(({ emp, missedDates }) => (
+                 <div key={emp.id} className="rounded-lg border border-border p-4">
+                   <div className="flex items-center justify-between mb-3">
+                     <div className="flex items-center gap-3">
+                       <div className="h-9 w-9 rounded-full grid place-items-center text-[11px] font-bold text-white"
+                         style={{ background: emp.avatarColor }}>
+                         {emp.fullName.split(" ").map(n=>n[0]).slice(0,2).join("")}
+                       </div>
+                       <div>
+                         <div className="text-sm font-medium">{emp.fullName}</div>
+                         <div className="text-[11px] text-muted-foreground">{emp.employeeId} • {emp.designation}</div>
+                       </div>
+                     </div>
+                     <span className="text-sm font-bold text-destructive">{missedDates.length} missed</span>
+                   </div>
+                   <div className="flex flex-wrap gap-1.5">
+                     {missedDates.map((date) => (
+                       <span key={date} className="inline-flex items-center px-2 py-1 rounded-md text-[11px] font-medium bg-destructive/10 text-destructive border border-destructive/20">
+                         <CalendarX2 className="h-3 w-3 mr-1" />
+                         {format(new Date(date + "T00:00:00"), "dd MMM")}
+                       </span>
+                     ))}
+                   </div>
+                 </div>
+               ))}
+             </div>
+           )}
+         </DialogContent>
+       </Dialog>
+
+       {/* Excel Import Dialog */}
+       <Dialog open={excelImportOpen} onOpenChange={setExcelImportOpen}>
+         <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto">
+           <DialogHeader>
+             <DialogTitle>Import Attendance from Excel</DialogTitle>
+             <DialogDescription>
+               Upload an Excel file with the "Attendence Tracking" sheet format. Columns A-E should contain employee info (Employee ID, Full Name, Designation, Team, Email), and columns F onward should contain attendance data with dates in row 1 and attendance codes (WFO, WFH, CLT, PTO, HOL) in subsequent rows. The system will create new employees if they don't exist and import their attendance records for the selected month/year.
+             </DialogDescription>
+           </DialogHeader>
+           <div className="space-y-4">
+             <div className="space-y-2">
+               <span className="font-medium">Select Month and Year</span>
+               <div className="flex gap-4">
+                 <div>
+                   <label className="text-[11px] text-muted-foreground block mb-1">Month</label>
+                   <select
+                     className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                     value={selectedMonth}
+                     onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                   >
+                     {[...Array(12)].map((_, i) => (
+                       <option key={i + 1} value={i + 1}>
+                         {new Date(0, i).toLocaleString('default', { month: 'long' })}
+                       </option>
+                     ))}
+                   </select>
+                 </div>
+                 <div>
+                   <label className="text-[11px] text-muted-foreground block mb-1">Year</label>
+                   <select
+                     className="block w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                     value={selectedYear}
+                     onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                   >
+                     {[...Array(5)].map((_, i) => {
+                       const year = new Date().getFullYear() - 2 + i;
+                       return <option key={year} value={year}>{year}</option>;
+                     })}
+                   </select>
+                 </div>
+               </div>
+             </div>
+              <div className="space-y-2">
+                <span className="font-medium">Upload Excel File</span>
+                <div className="flex flex-col gap-2">
+                  <label htmlFor="excel-file-input" className="flex items-center gap-2 cursor-pointer rounded-md border border-dashed bg-background px-4 py-3 text-sm text-muted-foreground hover:border-primary hover:text-primary">
+                    <Upload className="h-4 w-4 mr-2" />
+                    <span>Click to upload or drag and drop</span>
+                  </label>
+                  <input
+                    id="excel-file-input"
+                    type="file"
+                    accept=".xlsx,.xls"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                  {selectedFile && (
+                    <span className="text-sm text-muted-foreground">
+                      Selected file: {selectedFile.name}
+                    </span>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+              </div>
+             {importing && (
+               <div className="flex items-center gap-2">
+                 <Loader2 className="h-4 w-4 text-primary" />
+                 <span>Importing data...</span>
+               </div>
+             )}
+             {!importing && importResult && (
+               <div className={`p-4 rounded-lg ${importResult.type === 'success' ? 'bg-success/10 border border-success/20' : 'bg-destructive/10 border border-destructive/20'}`}>
+                 <span className={`font-medium ${importResult.type === 'success' ? 'text-success' : 'text-destructive'}`}>
+                   {importResult.message}
+                 </span>
+               </div>
+             )}
+              {!importing && (
+                <Button
+                  variant="default"
+                  onClick={handleImportExcel}
+                  disabled={!selectedFile}
+                  className="w-full"
+                >
+                  Import Attendance
+                </Button>
+              )}
+           </div>
+         </DialogContent>
+       </Dialog>
     </div>
   );
 }

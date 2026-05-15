@@ -3,45 +3,40 @@ package attendance.example.backend.controller;
 import attendance.example.backend.dto.MonthlyDetailsResponse;
 import attendance.example.backend.model.AttendanceRecord;
 import attendance.example.backend.service.AttendanceService;
+import attendance.example.backend.service.ExcelImportService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.Arrays;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/attendance")
 public class AttendanceController {
 
     private final AttendanceService attendanceService;
+    private final ExcelImportService excelImportService;
 
-    public AttendanceController(AttendanceService attendanceService) {
+    public AttendanceController(AttendanceService attendanceService, ExcelImportService excelImportService) {
         this.attendanceService = attendanceService;
+        this.excelImportService = excelImportService;
     }
 
     @GetMapping
-    public ResponseEntity<Map<String, List<AttendanceRecord>>> getAttendanceForEmployees(
+    public ResponseEntity<Map<String, java.util.List<AttendanceRecord>>> getAttendanceForEmployees(
             @RequestParam("employeeIds") String employeeIds
     ) throws Exception {
-        List<String> ids = Arrays.stream(employeeIds.split(","))
+        java.util.List<String> ids = java.util.Arrays.stream(employeeIds.split(","))
                 .map(String::trim)
                 .filter(value -> !value.isBlank())
-                .collect(Collectors.toList());
+                .collect(java.util.stream.Collectors.toList());
         return ResponseEntity.ok(attendanceService.getAttendanceForEmployees(ids));
     }
 
     @GetMapping("/monthly-details/{employeeId}")
-    public ResponseEntity<List<MonthlyDetailsResponse>> getMonthlyDetails(
+    public ResponseEntity<java.util.List<MonthlyDetailsResponse>> getMonthlyDetails(
             @PathVariable String employeeId,
             @RequestParam(required = false) Integer month,
             @RequestParam(required = false) Integer year,
@@ -54,7 +49,7 @@ public class AttendanceController {
     }
 
     @GetMapping("/{employeeId}")
-    public ResponseEntity<List<AttendanceRecord>> getAttendance(
+    public ResponseEntity<java.util.List<AttendanceRecord>> getAttendance(
             @PathVariable String employeeId,
             @RequestParam(required = false) String from,
             @RequestParam(required = false) String to
@@ -63,10 +58,20 @@ public class AttendanceController {
     }
 
     @PostMapping("/{employeeId}")
-    public ResponseEntity<List<AttendanceRecord>> markAttendance(
+    public ResponseEntity<java.util.List<AttendanceRecord>> markAttendance(
             @PathVariable String employeeId,
             @RequestBody AttendanceRecord request
     ) throws Exception {
         return ResponseEntity.ok(attendanceService.markAttendance(employeeId, request));
+    }
+
+    @PostMapping("/import-excel")
+    public ResponseEntity<Map<String, Object>> importExcel(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("month") int month,
+            @RequestParam("year") int year
+    ) throws Exception {
+        Map<String, Object> result = excelImportService.importExcel(file, month, year);
+        return ResponseEntity.ok(result);
     }
 }
