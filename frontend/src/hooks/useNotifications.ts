@@ -3,7 +3,7 @@ import { fetchNotifications, fetchUnreadNotifications, markNotificationRead, mar
 import { AppNotification, NotificationType } from "@/lib/notifications";
 import { useAuth } from "@/lib/auth";
 
-const POLL_INTERVAL = 30000; // 30 seconds
+const UNREAD_POLL_INTERVAL_MS = 120000;
 
 export function useNotifications() {
   const { user } = useAuth();
@@ -16,29 +16,43 @@ export function useNotifications() {
     type: n.type as NotificationType,
   });
 
-  const load = useCallback(async () => {
+  const refreshNotifications = useCallback(async () => {
     if (!user) return;
     try {
       const all = await fetchNotifications();
-      console.log("[notifications] fetched all:", all.length, all);
       setItems(all.map(toAppNotification));
-      const unread = await fetchUnreadNotifications();
-      console.log("[notifications] unread:", unread.length, unread);
-      setUnreadCount(unread.length);
     } catch (err) {
       console.error("[notifications] fetch error:", err);
     }
   }, [user]);
 
-  useEffect(() => {
-    load();
+  const refreshUnreadCount = useCallback(async () => {
+    if (!user) return;
+    try {
+      const unread = await fetchUnreadNotifications();
+      setUnreadCount(unread.length);
+    } catch (err) {
+      console.error("[notifications] unread fetch error:", err);
+    }
+  }, [user]);
 
-    intervalRef.current = setInterval(load, POLL_INTERVAL);
+  useEffect(() => {
+    if (!user) {
+      setItems([]);
+      setUnreadCount(0);
+      return;
+    }
+
+    void refreshUnreadCount();
+
+    intervalRef.current = setInterval(() => {
+      void refreshUnreadCount();
+    }, UNREAD_POLL_INTERVAL_MS);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [load]);
+  }, [refreshUnreadCount, user]);
 
   const markRead = useCallback(async (id: string) => {
     try {
@@ -61,5 +75,5 @@ export function useNotifications() {
     }
   }, [user]);
 
-  return { items, unreadCount, markRead, markAllRead, refresh: load };
+  return { items, unreadCount, markRead, markAllRead, refreshNotifications, refreshUnreadCount };
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Bell, Check, AlertTriangle, Info, CheckCircle2, AlertCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -26,9 +26,15 @@ const TYPE_CLASSES: Record<string, string> = {
 
 export default function NotificationsBell() {
   const nav = useNavigate();
-  const { items, unreadCount, markRead, markAllRead } = useNotifications();
+  const { items, unreadCount, markRead, markAllRead, refreshNotifications, refreshUnreadCount } = useNotifications();
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<AppNotification | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    void refreshNotifications();
+    void refreshUnreadCount();
+  }, [open, refreshNotifications, refreshUnreadCount]);
 
   const handleAction = (n: AppNotification) => {
     markRead(n.id);

@@ -49,13 +49,13 @@ public class AttendanceService {
         return readAttendance(employeeId, from, to);
     }
 
-    public Map<String, List<AttendanceRecord>> getAttendanceForEmployees(List<String> employeeIds) throws Exception {
+    public Map<String, List<AttendanceRecord>> getAttendanceForEmployees(List<String> employeeIds, String from, String to) throws Exception {
         Map<String, List<AttendanceRecord>> response = new LinkedHashMap<>();
         for (String employeeId : employeeIds) {
             if (employeeId == null || employeeId.isBlank()) {
                 continue;
             }
-            response.put(employeeId, readAttendance(employeeId.trim()));
+            response.put(employeeId, readAttendance(employeeId.trim(), from, to));
         }
         return response;
     }

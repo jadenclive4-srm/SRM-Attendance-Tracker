@@ -4,6 +4,8 @@ import attendance.example.backend.exception.ApiException;
 import attendance.example.backend.model.DeletionRequest;
 import attendance.example.backend.model.Employee;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import attendance.example.backend.service.EmployeeDetailsImportService;
 import attendance.example.backend.service.EmployeeService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,17 +13,23 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/employees")
 public class EmployeeController {
 
     private final EmployeeService employeeService;
+    private final EmployeeDetailsImportService employeeDetailsImportService;
 
-    public EmployeeController(EmployeeService employeeService) {
+    public EmployeeController(EmployeeService employeeService,
+                              EmployeeDetailsImportService employeeDetailsImportService) {
         this.employeeService = employeeService;
+        this.employeeDetailsImportService = employeeDetailsImportService;
     }
 
     @GetMapping
@@ -43,6 +51,13 @@ public class EmployeeController {
     @GetMapping("/deletion-requests")
     public ResponseEntity<List<DeletionRequest>> getPendingDeletionRequests() throws Exception {
         return ResponseEntity.ok(employeeService.getPendingDeletionRequests());
+    }
+
+    @PostMapping(value = "/import-details", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<Map<String, Object>> importEmployeeDetails(
+            @RequestParam("file") MultipartFile file
+    ) throws Exception {
+        return ResponseEntity.ok(employeeDetailsImportService.importEmployeeDetailsFile(file));
     }
 
     @PostMapping("/deletion-requests/{employeeId}/approve")

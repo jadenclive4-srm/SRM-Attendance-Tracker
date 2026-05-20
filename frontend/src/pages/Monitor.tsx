@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { DeletionRequest, Employee, AttendanceRecord, AttendanceStatus, DESIGNATION_RANK, STATUS_BADGE, STATUS_COLOR } from "@/lib/types";
-import { countByStatus, isSameMonth } from "@/lib/attendance";
+import { countByStatus } from "@/lib/attendance";
 import {
   approveDeletionRequest,
   dismissDeletionRequest,
   emitPendingDeletionRequestsChanged,
+  getAttendance,
   getAttendanceForEmployees,
   getEmployees,
   getPendingDeletionRequests,
@@ -28,13 +29,20 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 export default function Monitor() {
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<Employee | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [attendance, setAttendance] = useState<Record<string, AttendanceRecord[]>>({});
+  const [monthAttendance, setMonthAttendance] = useState<Record<string, AttendanceRecord[]>>({});
   const [requests, setRequests] = useState<DeletionRequest[]>([]);
   const [approvingRequestId, setApprovingRequestId] = useState<string | null>(null);
   const [dismissingRequestId, setDismissingRequestId] = useState<string | null>(null);
+  const monthFrom = format(startOfMonth(today), "yyyy-MM-dd");
+  const monthTo = format(today, "yyyy-MM-dd");
 
   useEffect(() => {
     getEmployees()
@@ -44,10 +52,10 @@ export default function Monitor() {
 
   useEffect(() => {
     if (!employees.length) return;
-    getAttendanceForEmployees(employees.map(e => e.id))
-      .then(setAttendance)
-      .catch(() => setAttendance({}));
-  }, [employees]);
+    getAttendanceForEmployees(employees.map(e => e.id), monthFrom, monthTo)
+      .then(setMonthAttendance)
+      .catch(() => setMonthAttendance({}));
+  }, [employees, monthFrom, monthTo]);
 
   useEffect(() => {
     getPendingDeletionRequests()
@@ -101,7 +109,7 @@ export default function Monitor() {
     }
   };
 
-  if (selected) return <EmployeeDetail emp={selected} attendance={attendance} onBack={() => setSelected(null)} />;
+  if (selected) return <EmployeeDetail emp={selected} monthAttendance={monthAttendance[selected.id] || []} onBack={() => setSelected(null)} />;
 
   return (
     <div className="space-y-6">
@@ -167,7 +175,7 @@ export default function Monitor() {
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {list.map(e => {
-            const c = countByStatus((attendance[e.id] || []).filter(r => isSameMonth(r.date)));
+            const c = countByStatus(monthAttendance[e.id] || []);
             return (
               <button key={e.id} onClick={() => setSelected(e)}
                 className="card-soft p-5 text-left hover:shadow-elevated hover:-translate-y-0.5 transition-all">
@@ -198,16 +206,12 @@ export default function Monitor() {
   );
 }
 
-function EmployeeDetail({ emp, attendance, onBack }: { emp: Employee; attendance: Record<string, AttendanceRecord[]>; onBack: () => void }) {
+function EmployeeDetail({ emp, monthAttendance, onBack }: { emp: Employee; monthAttendance: AttendanceRecord[]; onBack: () => void }) {
   const today = useMemo(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
     return d;
   }, []);
-  const records = useMemo(
-    () => (attendance[emp.id] || []).slice().sort((a, b) => b.date.localeCompare(a.date)),
-    [attendance, emp.id]
-  );
   const initialMonthStart = startOfMonth(today);
   const initialMonthEnd = endOfMonth(today) > today ? today : endOfMonth(today);
   const [range, setRange] = useState<DateRange>({ preset: "month", from: initialMonthStart, to: initialMonthEnd });
@@ -218,6 +222,13 @@ function EmployeeDetail({ emp, attendance, onBack }: { emp: Employee; attendance
   const [reportOpen, setReportOpen] = useState(false);
   const [reportFormat, setReportFormat] = useState<EmployeeReportFormat>("pdf");
   const [reportBusy, setReportBusy] = useState(false);
+  const [records, setRecords] = useState<AttendanceRecord[]>([]);
+
+  useEffect(() => {
+    getAttendance(emp.id)
+      .then((data) => setRecords(data))
+      .catch(() => setRecords([]));
+  }, [emp.id]);
 
   const filtered = useMemo(() => {
     const safeTo = range.to > today ? today : range.to;
@@ -228,7 +239,7 @@ function EmployeeDetail({ emp, attendance, onBack }: { emp: Employee; attendance
 
   const visibleCounts = useMemo(() => countByStatus(visibleRecords), [visibleRecords]);
   const officeDaysInRange = visibleCounts.WFO + visibleCounts.CLT;
-  const monthCounts = countByStatus(records.filter((r) => isSameMonth(r.date)));
+  const monthCounts = countByStatus(monthAttendance);
   const officeDaysThisMonth = monthCounts.WFO + monthCounts.CLT;
 
   const workingDaysInRange = useMemo(() => {

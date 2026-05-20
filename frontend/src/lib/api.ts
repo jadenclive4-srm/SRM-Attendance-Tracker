@@ -85,6 +85,23 @@ export async function getEmployees(): Promise<Employee[]> {
   return request<Employee[]>("/api/employees");
 }
 
+export interface EmployeeDetailsImportResult {
+  createdEmployees: string[];
+  updatedEmployees: string[];
+  skippedEmployees: string[];
+  errors: string[];
+  success: boolean;
+}
+
+export async function importEmployeeDetails(file: File): Promise<EmployeeDetailsImportResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request<EmployeeDetailsImportResult>("/api/employees/import-details", {
+    method: "POST",
+    body: formData,
+  });
+}
+
 export async function getDeletionRequestStatus(employeeId: string): Promise<DeletionRequest> {
   return request<DeletionRequest>(`/api/employees/${encodeURIComponent(employeeId)}/deletion-request`);
 }
@@ -127,9 +144,16 @@ export async function getAttendance(employeeId: string, from?: string, to?: stri
   return request<AttendanceRecord[]>(url);
 }
 
-export async function getAttendanceForEmployees(employeeIds: string[]): Promise<Record<string, AttendanceRecord[]>> {
-  const query = employeeIds.map(encodeURIComponent).join(",");
-  return request<Record<string, AttendanceRecord[]>>(`/api/attendance?employeeIds=${query}`);
+export async function getAttendanceForEmployees(
+  employeeIds: string[],
+  from?: string,
+  to?: string
+): Promise<Record<string, AttendanceRecord[]>> {
+  const params = new URLSearchParams();
+  params.set("employeeIds", employeeIds.join(","));
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  return request<Record<string, AttendanceRecord[]>>(`/api/attendance?${params.toString()}`);
 }
 
 export async function markAttendance(employeeId: string, record: Omit<AttendanceRecord, "edited">): Promise<AttendanceRecord[]> {

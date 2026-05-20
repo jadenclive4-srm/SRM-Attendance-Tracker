@@ -26,13 +26,15 @@ public class AttendanceController {
 
     @GetMapping
     public ResponseEntity<Map<String, java.util.List<AttendanceRecord>>> getAttendanceForEmployees(
-            @RequestParam("employeeIds") String employeeIds
+            @RequestParam("employeeIds") String employeeIds,
+            @RequestParam(required = false) String from,
+            @RequestParam(required = false) String to
     ) throws Exception {
         java.util.List<String> ids = java.util.Arrays.stream(employeeIds.split(","))
                 .map(String::trim)
                 .filter(value -> !value.isBlank())
                 .collect(java.util.stream.Collectors.toList());
-        return ResponseEntity.ok(attendanceService.getAttendanceForEmployees(ids));
+        return ResponseEntity.ok(attendanceService.getAttendanceForEmployees(ids, from, to));
     }
 
     @GetMapping("/monthly-details/{employeeId}")

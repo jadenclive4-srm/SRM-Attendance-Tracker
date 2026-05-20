@@ -33,19 +33,12 @@ function deriveRole(user: Employee): Role {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<Employee | null>(null);
-  const [role, setRoleState] = useState<Role>("user");
-  const [isReady, setIsReady] = useState(false);
+  const [initialSession] = useState(() => loadSession());
+  const [user, setUser] = useState<Employee | null>(initialSession?.user ?? null);
+  const [role, setRoleState] = useState<Role>(initialSession?.role ?? "user");
+  const [isReady, setIsReady] = useState(Boolean(initialSession));
 
   useEffect(() => {
-    const session = loadSession();
-    if (session) {
-      setUser(session.user);
-      setRoleState(session.role);
-      setIsReady(true);
-      return;
-    }
-
     fetchCurrentUser()
       .then((current) => {
         if (current) {
@@ -53,15 +46,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(current);
           setRoleState(derivedRole);
           saveSession(derivedRole, current);
+          setIsReady(true);
+          return;
         }
+
+        setUser(null);
+        setRoleState("user");
+        localStorage.removeItem(SESSION_KEY);
       })
       .catch(() => {
-        // Backend not available yet; stay anonymous until explicit login
+        // If we already restored from local storage, keep the current UI state.
+        if (initialSession) {
+          return;
+        }
       })
       .finally(() => {
         setIsReady(true);
       });
-  }, []);
+  }, [initialSession]);
 
   const login = ({ role: loginRole, user: loginUser }: { role: Role; user: Employee }) => {
     setUser(loginUser);

@@ -11,6 +11,8 @@ import NotificationsBell from "./NotificationsBell";
 import { useEffect, useState } from "react";
 import LogoutConfirmDialog from "./LogoutConfirmDialog";
 
+const PENDING_REQUESTS_POLL_INTERVAL_MS = 60000;
+
 export default function TopNav() {
   const { user, role, logout } = useAuth();
   const nav = useNavigate();
@@ -31,7 +33,7 @@ export default function TopNav() {
     const onPendingChanged = () => syncCount();
     window.addEventListener(PENDING_DELETION_REQUESTS_CHANGED_EVENT, onPendingChanged);
 
-    const interval = setInterval(syncCount, 3000);
+    const interval = setInterval(syncCount, PENDING_REQUESTS_POLL_INTERVAL_MS);
 
     return () => {
       clearInterval(interval);

@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { AttendanceRecord, AttendanceStatus, Employee, STATUS_COLOR } from "@/lib/types";
 import { countByStatus } from "@/lib/attendance";
-import { getAttendanceForEmployees, getEmployees } from "@/lib/api";
+import { getAttendanceForEmployees, getEmployees, importEmployeeDetails } from "@/lib/api";
 import StatCard from "@/components/StatCard";
-import { Users, CheckCircle2, AlertCircle, Trophy, FileText, BarChart3, CalendarX2, Loader2, Upload } from "lucide-react";
+import { Users, CheckCircle2, AlertCircle, Trophy, FileText, BarChart3, CalendarX2, Loader2, Upload, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { eachDayOfInterval, format } from "date-fns";
 import DateRangePicker, { RangeContext } from "@/components/DateRangePicker";
-import { defaultRange, filterRecords } from "@/lib/dateRange";
+import { defaultRange } from "@/lib/dateRange";
 import StackedTrendChart from "@/components/StackedTrendChart";
 import FullReportAnalyticsDialog from "@/components/FullReportAnalyticsDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -22,49 +22,56 @@ export default function AdminDashboard() {
   const today = new Date();
   const [range, setRange] = useState(defaultRange());
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [attendance, setAttendance] = useState<Record<string, AttendanceRecord[]>>({});
+  const [rangeAttendance, setRangeAttendance] = useState<Record<string, AttendanceRecord[]>>({});
+  const [todayAttendance, setTodayAttendance] = useState<Record<string, AttendanceRecord[]>>({});
   const [markedTodayDialogOpen, setMarkedTodayDialogOpen] = useState(false);
   const [notMarkedDialogOpen, setNotMarkedDialogOpen] = useState(false);
   const [yetToMarkDialogOpen, setYetToMarkDialogOpen] = useState(false);
   const [excelImportOpen, setExcelImportOpen] = useState(false);
+  const [employeeDetailsImportOpen, setEmployeeDetailsImportOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [selectedEmployeeDetailsFile, setSelectedEmployeeDetailsFile] = useState<File | null>(null);
+  const [employeeDetailsImporting, setEmployeeDetailsImporting] = useState(false);
+  const [employeeDetailsImportResult, setEmployeeDetailsImportResult] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedMonth, setSelectedMonth] = useState<number>(today.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(today.getFullYear());
 
   const todayKey = format(today, "yyyy-MM-dd");
+  const rangeFromKey = format(range.from, "yyyy-MM-dd");
+  const rangeToKey = format(range.to > today ? today : range.to, "yyyy-MM-dd");
   const stats = useMemo(() => {
     const total = employees.length;
     let marked = 0;
     employees.forEach(e => {
-      if ((attendance[e.id] || []).some(r => r.date === todayKey)) marked++;
+      if ((todayAttendance[e.id] || []).some(r => r.date === todayKey)) marked++;
     });
     return { total, marked, notMarked: total - marked };
-  }, [attendance, employees, todayKey]);
+  }, [employees, todayAttendance, todayKey]);
 
   // Get employees marked today with their status
   const markedTodayEmployees = useMemo(() => {
     return employees.filter(e => {
-      const rec = (attendance[e.id] || []).find(r => r.date === todayKey);
+      const rec = (todayAttendance[e.id] || []).find(r => r.date === todayKey);
       return !!rec;
     }).map(e => {
-      const rec = (attendance[e.id] || []).find(r => r.date === todayKey);
+      const rec = (todayAttendance[e.id] || []).find(r => r.date === todayKey);
       return { employee: e, status: rec?.status };
     }).sort((a, b) => a.employee.fullName.localeCompare(b.employee.fullName));
-  }, [attendance, employees, todayKey]);
+  }, [employees, todayAttendance, todayKey]);
 
   // Get employees not marked today
   const notMarkedTodayEmployees = useMemo(() => {
     return employees.filter(e => {
-      const rec = (attendance[e.id] || []).find(r => r.date === todayKey);
+      const rec = (todayAttendance[e.id] || []).find(r => r.date === todayKey);
       return !rec;
     }).sort((a, b) => a.fullName.localeCompare(b.fullName));
-  }, [attendance, employees, todayKey]);
+  }, [employees, todayAttendance, todayKey]);
 
   const ranked: RankRow[] = useMemo(() => {
     return employees.map(e => {
-      const recs = filterRecords(attendance[e.id] || [], range);
+      const recs = rangeAttendance[e.id] || [];
       return { emp: e, counts: countByStatus(recs) };
     }).sort((a, b) => {
       if (b.counts.WFO !== a.counts.WFO) return b.counts.WFO - a.counts.WFO;
@@ -72,7 +79,7 @@ export default function AdminDashboard() {
       if (b.counts.WFH !== a.counts.WFH) return b.counts.WFH - a.counts.WFH;
       return a.counts.PTO - b.counts.PTO;
     });
-  }, [attendance, employees, range]);
+  }, [employees, rangeAttendance]);
 
   const totalWorkingDaysInRange = useMemo(() => {
     const effectiveTo = range.to > today ? today : range.to;
@@ -137,7 +144,7 @@ export default function AdminDashboard() {
     const result: Array<{ emp: Employee; missedDates: string[] }> = [];
 
     employees.forEach((emp) => {
-      const empRecords = attendance[emp.id] || [];
+      const empRecords = rangeAttendance[emp.id] || [];
       const recordDates = new Set(empRecords.map((r) => r.date));
       const missedDates = workingDays.filter((wd) => !recordDates.has(wd));
       if (missedDates.length > 0) {
@@ -152,7 +159,7 @@ export default function AdminDashboard() {
     });
 
     return result;
-  }, [attendance, employees, range, today]);
+  }, [employees, range, rangeAttendance, today]);
 
   useEffect(() => {
     getEmployees()
@@ -162,10 +169,36 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!employees.length) return;
-    getAttendanceForEmployees(employees.map(e => e.id))
-      .then((data) => setAttendance(data))
-      .catch(() => setAttendance({}));
-  }, [employees]);
+    getAttendanceForEmployees(employees.map(e => e.id), rangeFromKey, rangeToKey)
+      .then((data) => setRangeAttendance(data))
+      .catch(() => setRangeAttendance({}));
+  }, [employees, rangeFromKey, rangeToKey]);
+
+  useEffect(() => {
+    if (!employees.length) return;
+    getAttendanceForEmployees(employees.map(e => e.id), todayKey, todayKey)
+      .then((data) => setTodayAttendance(data))
+      .catch(() => setTodayAttendance({}));
+  }, [employees, todayKey]);
+
+  const refreshDashboardData = async () => {
+    const employeeData = await getEmployees();
+    setEmployees(employeeData);
+
+    if (!employeeData.length) {
+      setRangeAttendance({});
+      setTodayAttendance({});
+      return;
+    }
+
+    const [rangeData, todayData] = await Promise.all([
+      getAttendanceForEmployees(employeeData.map((employee) => employee.id), rangeFromKey, rangeToKey),
+      getAttendanceForEmployees(employeeData.map((employee) => employee.id), todayKey, todayKey),
+    ]);
+
+    setRangeAttendance(rangeData);
+    setTodayAttendance(todayData);
+  };
 
    // Export modal
    const [reportOpen, setReportOpen] = useState(false);
@@ -174,6 +207,13 @@ export default function AdminDashboard() {
       const file = e.target.files?.[0];
       if (file) {
         setSelectedFile(file);
+      }
+    };
+
+    const handleEmployeeDetailsFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        setSelectedEmployeeDetailsFile(file);
       }
     };
 
@@ -206,21 +246,9 @@ export default function AdminDashboard() {
        const result = await response.json();
        
         if (result.success) {
-          const message = `Import successful! Created ${result.createdEmployees?.length || 0} new employees and imported ${result.updatedAttendance?.length || 0} attendance records.`;
+         const message = `Import successful! Created ${result.createdEmployees?.length || 0} new employees and imported ${result.updatedAttendance?.length || 0} attendance records.`;
           setImportResult({ message, type: 'success' });
-         
-         // Refresh employees and attendance data
-         getEmployees()
-           .then((data) => setEmployees(data))
-           .then(() => {
-             if (employees.length) {
-               getAttendanceForEmployees(employees.map(e => e.id))
-                 .then((data) => setAttendance(data));
-             }
-           })
-           .catch(() => {
-             setAttendance({});
-           });
+         await refreshDashboardData();
        } else {
          setImportResult({ 
            message: result.errors?.join(', ') || 'Import failed with unknown error', 
@@ -234,6 +262,52 @@ export default function AdminDashboard() {
        });
      } finally {
        setImporting(false);
+     }
+   };
+
+   const handleImportEmployeeDetails = async () => {
+     if (!selectedEmployeeDetailsFile) {
+       setEmployeeDetailsImportResult({ message: "Select a CSV file before importing", type: "error" });
+       return;
+     }
+
+     setEmployeeDetailsImporting(true);
+     setEmployeeDetailsImportResult(null);
+
+     try {
+       const result = await importEmployeeDetails(selectedEmployeeDetailsFile);
+       const created = result.createdEmployees?.length || 0;
+       const updated = result.updatedEmployees?.length || 0;
+       const skipped = result.skippedEmployees?.length || 0;
+       const errorCount = result.errors?.length || 0;
+
+       const summary = [
+         created ? `Created ${created}` : "",
+         updated ? `Updated ${updated}` : "",
+         skipped ? `Unchanged ${skipped}` : "",
+         errorCount ? `Errors ${errorCount}` : "",
+       ].filter(Boolean).join(" | ");
+
+       if (created || updated) {
+         await refreshDashboardData();
+       }
+
+       setEmployeeDetailsImportResult({
+         message: errorCount ? `${summary}. ${result.errors.slice(0, 3).join(" | ")}` : summary || "Import completed",
+         type: errorCount ? "error" : "success",
+       });
+
+       if (!errorCount) {
+         setSelectedEmployeeDetailsFile(null);
+         setEmployeeDetailsImportOpen(false);
+       }
+     } catch (error: any) {
+       setEmployeeDetailsImportResult({
+         message: error.message || "Failed to import employee details",
+         type: "error",
+       });
+     } finally {
+       setEmployeeDetailsImporting(false);
      }
    };
 
@@ -258,6 +332,9 @@ export default function AdminDashboard() {
            <Button onClick={() => setReportOpen(true)}>
              <FileText className="h-4 w-4 mr-2" /> Full Report
            </Button>
+           <Button onClick={() => setEmployeeDetailsImportOpen(true)} variant="outline">
+             <UserPlus className="h-4 w-4 mr-2" /> Import Employee Details
+           </Button>
            <Button onClick={() => setExcelImportOpen(true)}>
              <Upload className="h-4 w-4 mr-2" /> Import Excel
            </Button>
@@ -275,7 +352,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <StackedTrendChart range={range} attendance={attendance} employeeIds={employees.map(e => e.id)} employees={employees} />
+      <StackedTrendChart range={range} attendance={rangeAttendance} employeeIds={employees.map(e => e.id)} employees={employees} />
 
       {/* Leaderboard */}
       <Card className="card-soft overflow-hidden">
@@ -394,7 +471,7 @@ export default function AdminDashboard() {
         open={reportOpen}
         onOpenChange={setReportOpen}
         employees={employees}
-        attendance={attendance}
+        attendance={rangeAttendance}
         initialRange={range}
       />
 
@@ -597,6 +674,66 @@ export default function AdminDashboard() {
                   Import Attendance
                 </Button>
               )}
+           </div>
+       </DialogContent>
+      </Dialog>
+
+       <Dialog open={employeeDetailsImportOpen} onOpenChange={setEmployeeDetailsImportOpen}>
+         <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+           <DialogHeader>
+             <DialogTitle>Import Employee Details</DialogTitle>
+             <DialogDescription>
+               Upload a CSV file with columns in this exact order: email, fullName, role, employeeId.
+               This import is separate from attendance import and is meant to keep employee mapping clean and exact.
+             </DialogDescription>
+           </DialogHeader>
+           <div className="space-y-4">
+             <div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+               Example:
+               <br />
+               <span className="font-mono">
+                 email,fullName,role,employeeId
+               </span>
+               <br />
+               <span className="font-mono">
+                 madhuri.rapolu@srmtech.com,Madhuri Rapolu,Employee,A3771
+               </span>
+             </div>
+             <div className="space-y-2">
+               <span className="font-medium">Upload Employee Details CSV</span>
+               <div className="flex flex-col gap-2">
+                 <label htmlFor="employee-details-csv-input" className="flex items-center gap-2 cursor-pointer rounded-md border border-dashed bg-background px-4 py-3 text-sm text-muted-foreground hover:border-primary hover:text-primary">
+                   <UserPlus className="h-4 w-4 mr-2" />
+                   <span>Click to choose CSV file</span>
+                 </label>
+                 <input
+                   id="employee-details-csv-input"
+                   type="file"
+                   accept=".csv"
+                   className="hidden"
+                   onChange={handleEmployeeDetailsFileChange}
+                 />
+                 {selectedEmployeeDetailsFile && (
+                   <span className="text-sm text-muted-foreground">
+                     Selected file: {selectedEmployeeDetailsFile.name}
+                   </span>
+                 )}
+               </div>
+             </div>
+             {employeeDetailsImportResult && (
+               <div className={`p-4 rounded-lg ${employeeDetailsImportResult.type === 'success' ? 'bg-success/10 border border-success/20' : 'bg-destructive/10 border border-destructive/20'}`}>
+                 <span className={`font-medium ${employeeDetailsImportResult.type === 'success' ? 'text-success' : 'text-destructive'}`}>
+                   {employeeDetailsImportResult.message}
+                 </span>
+               </div>
+             )}
+             <Button
+               onClick={handleImportEmployeeDetails}
+               disabled={employeeDetailsImporting || !selectedEmployeeDetailsFile}
+               className="w-full"
+             >
+               {employeeDetailsImporting ? "Importing employee details..." : "Import Employee Details CSV"}
+             </Button>
            </div>
          </DialogContent>
        </Dialog>

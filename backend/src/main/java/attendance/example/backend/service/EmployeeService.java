@@ -20,6 +20,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class EmployeeService {
@@ -259,6 +260,84 @@ public class EmployeeService {
         );
     }
 
+    public ImportEmployeeResult upsertImportedEmployee(
+            String email,
+            String fullName,
+            String roleText,
+            String employeeId
+    ) throws Exception {
+        String normalizedEmployeeId = normalizeEmployeeId(employeeId);
+        if (!normalizedEmployeeId.matches("^[IA]\\d{4}$")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Employee ID must be in format I1234 or A1234");
+        }
+
+        String normalizedEmail = normalizeEmail(email);
+        String cleanFullName = requireText(fullName, "Full name is required");
+        String resolvedRole = resolveImportedRole(roleText, normalizedEmployeeId);
+
+        Employee byEmployeeId = findByEmployeeId(normalizedEmployeeId);
+        Employee byEmail = findByEmail(normalizedEmail).orElse(null);
+
+        if (byEmployeeId != null && byEmail != null && !byEmployeeId.getId().equals(byEmail.getId())) {
+            throw new ApiException(HttpStatus.CONFLICT, "Employee ID and email point to different existing employees");
+        }
+
+        Employee employee = byEmployeeId != null ? byEmployeeId : byEmail;
+        boolean created = employee == null;
+
+        if (employee == null) {
+            employee = new Employee();
+            employee.setId(UUID.randomUUID().toString());
+            employee.setDesignation("Associate");
+            employee.setTeam("General");
+            employee.setCity("Hyderabad");
+            employee.setState("Telangana");
+            employee.setCountry("India");
+            employee.setAvatarColor(avatarColorFor(normalizedEmployeeId));
+        }
+
+        boolean updated = false;
+        updated |= assignIfChanged(employee::getEmployeeId, employee::setEmployeeId, normalizedEmployeeId);
+        updated |= assignIfChanged(employee::getEmail, employee::setEmail, normalizedEmail);
+        updated |= assignIfChanged(employee::getFullName, employee::setFullName, cleanFullName);
+        updated |= assignIfChanged(employee::getRole, employee::setRole, resolvedRole);
+        updated |= assignIfChanged(employee::getStatus, employee::setStatus, "active");
+
+        if (employee.getDesignation() == null || employee.getDesignation().isBlank()) {
+            employee.setDesignation("admin".equals(resolvedRole) ? "Manager" : "Associate");
+            updated = true;
+        }
+        if (employee.getTeam() == null || employee.getTeam().isBlank()) {
+            employee.setTeam("General");
+            updated = true;
+        }
+        if (employee.getCity() == null || employee.getCity().isBlank()) {
+            employee.setCity("Hyderabad");
+            updated = true;
+        }
+        if (employee.getState() == null || employee.getState().isBlank()) {
+            employee.setState("Telangana");
+            updated = true;
+        }
+        if (employee.getCountry() == null || employee.getCountry().isBlank()) {
+            employee.setCountry("India");
+            updated = true;
+        }
+        if (employee.getAvatarColor() == null || employee.getAvatarColor().isBlank()) {
+            employee.setAvatarColor(avatarColorFor(normalizedEmployeeId));
+            updated = true;
+        }
+
+        if (created || updated) {
+            employeesCollection().document(employee.getId()).set(employee).get();
+        }
+
+        return new ImportEmployeeResult(sanitize(employee), created, !created && updated);
+    }
+
+    public record ImportEmployeeResult(Employee employee, boolean created, boolean updated) {
+    }
+
     private CollectionReference deletionRequestsCollection() {
         return firestore.collection("employee_deletion_requests");
     }
@@ -335,6 +414,28 @@ public class EmployeeService {
 
     private String defaultIfBlank(String value, String fallback) {
         return value == null || value.trim().isEmpty() ? fallback : value.trim();
+    }
+
+    private boolean assignIfChanged(java.util.function.Supplier<String> getter,
+                                    java.util.function.Consumer<String> setter,
+                                    String nextValue) {
+        String currentValue = getter.get();
+        if (nextValue.equals(currentValue)) {
+            return false;
+        }
+        setter.accept(nextValue);
+        return true;
+    }
+
+    private String resolveImportedRole(String roleText, String employeeId) {
+        String normalizedRole = roleText == null ? "" : roleText.trim().toLowerCase(Locale.ROOT);
+        if (normalizedRole.contains("admin")) {
+            return "admin";
+        }
+        if (normalizedRole.contains("employee") || normalizedRole.contains("user")) {
+            return "user";
+        }
+        return resolveRole(employeeId);
     }
 
     private String avatarColorFor(String employeeId) {
